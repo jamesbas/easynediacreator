@@ -1,0 +1,3 @@
+import { Suspense } from "react";
+import { LoginForm } from "@/components/auth/login-form";
+export default function LoginPage() { return <main className="grid min-h-screen place-items-center px-4"><section className="w-full max-w-sm border border-[var(--line)] bg-[var(--surface)] p-7"><p className="font-mono text-xs font-semibold uppercase text-[var(--accent)]">Private studio</p><h1 className="mt-2 text-2xl font-bold">Easy Media Generator</h1><p className="mt-2 text-sm leading-6 text-[var(--muted)]">Enter the local passcode to continue.</p><Suspense fallback={<p className="mt-6 text-sm text-[var(--muted)]">Loading secure sign-in...</p>}><LoginForm /></Suspense></section></main>; }

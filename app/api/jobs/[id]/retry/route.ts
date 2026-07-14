@@ -1,0 +1,3 @@
+import { NextResponse } from "next/server";
+import { retryRuntimeJob } from "@/lib/services/job-runner";
+export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) { try { const { id } = await params; retryRuntimeJob(id); return NextResponse.json({ ok: true }); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Job could not be retried." }, { status: 409 }); } }

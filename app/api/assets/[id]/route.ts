@@ -1,0 +1,4 @@
+import { NextResponse } from "next/server";
+import { getOutput, publicAsset, removeOutput } from "@/lib/runtime/output-registry";
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) { const { id } = await params; const asset = getOutput(id); return asset ? NextResponse.json({ asset: publicAsset(asset) }) : NextResponse.json({ error: "Asset was not found." }, { status: 404 }); }
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) { const { id } = await params; return removeOutput(id) ? NextResponse.json({ removed: true }) : NextResponse.json({ error: "Asset was not found." }, { status: 404 }); }
