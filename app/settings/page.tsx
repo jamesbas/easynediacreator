@@ -1,6 +1,7 @@
 import { CheckCircle2, CircleAlert, CircleX } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { RefreshModelsButton } from "@/components/settings/refresh-models-button";
+import { ModelSelectionControl } from "@/components/settings/model-selection-control";
 import { config } from "@/lib/config";
 import { getModels } from "@/lib/runtime/model-cache";
 import { getWanGpClient } from "@/lib/wan-gp";
@@ -45,5 +46,5 @@ function StatusCell({ label, value, tone }: { label: string; value: string; tone
 function ModelRow({ model }: { model: Awaited<ReturnType<typeof getModels>>[number] }) {
   const Icon = model.availability === "available" ? CheckCircle2 : model.availability === "partial" ? CircleAlert : CircleX;
   const color = model.availability === "available" ? "text-[var(--teal)]" : model.availability === "partial" ? "text-[#9b7100]" : "text-[var(--accent)]";
-  return <div className="flex items-start gap-4 p-4 sm:items-center"><Icon aria-hidden="true" className={`mt-0.5 shrink-0 sm:mt-0 ${color}`} size={20} /><div className="min-w-0 flex-1"><p className="font-bold">{model.displayName}</p><p className="text-xs text-[var(--muted)]">{model.workflowType.replaceAll("-", " ")}{model.reason ? `: ${model.reason}` : ""}</p></div><span className={`font-mono text-[0.68rem] uppercase ${color}`}>{model.availability}</span></div>;
+  return <div className="flex items-start gap-4 p-4"><Icon aria-hidden="true" className={`mt-0.5 shrink-0 ${color}`} size={20} /><div className="min-w-0 flex-1"><p className="font-bold">{model.displayName}</p><p className="mt-1 font-mono text-[0.68rem] text-[var(--muted)]">{model.modelType ?? "No model selected"}</p><p className="mt-1 text-xs text-[var(--muted)]">{model.workflowType.replaceAll("-", " ")}{model.reason ? `: ${model.reason}` : ""}</p>{model.candidates.length > 0 && <ModelSelectionControl selectionKey={`${model.workflowType}:${model.key}`} modelType={model.modelType} candidates={model.candidates} />}</div><span className={`font-mono text-[0.68rem] uppercase ${color}`}>{model.availability}</span></div>;
 }

@@ -18,6 +18,7 @@ export type RuntimeJob = {
 
 export type ModelAvailability = "available" | "partial" | "missing";
 export type LoraCatalog = { supported: boolean; loras: string[]; reason?: string };
+export type ModelCandidate = { modelType: string; name: string; availability?: ModelAvailability };
 export type ModelOption = {
   key: string;
   displayName: string;
@@ -29,6 +30,7 @@ export type ModelOption = {
   defaults: Record<string, unknown>;
   capabilities: string[];
   loraCatalog: LoraCatalog;
+  candidates: ModelCandidate[];
 };
 
 export type RuntimeAsset = {

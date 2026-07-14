@@ -2,7 +2,7 @@ import { config } from "@/lib/config";
 import type { ModelOption, WorkflowType } from "@/lib/types";
 import type { WanGpClient, WanGpModelSummary } from "./client";
 
-type LogicalRule = { key: string; displayName: string; workflowType: WorkflowType; family: string; output: "image" | "video"; requiresImage?: boolean; namePattern?: RegExp };
+export type LogicalRule = { key: string; displayName: string; workflowType: WorkflowType; family: string; output: "image" | "video"; requiresImage?: boolean; namePattern?: RegExp };
 
 const rules: LogicalRule[] = [
   { key: "qwen-image", displayName: "Qwen Image", workflowType: "image-create", family: "qwen", output: "image", namePattern: /qwen(?!.*edit)/i },
@@ -32,29 +32,39 @@ export function getWanGpCapabilities(metadata: Record<string, unknown>) {
   return [...new Set(capabilities)];
 }
 
-export function matchModel(rule: LogicalRule, models: WanGpModelSummary[]) {
-  const matches = models.filter((model) => {
+export function selectionKey(rule: Pick<LogicalRule, "workflowType" | "key">) { return `${rule.workflowType}:${rule.key}`; }
+
+export function matchingModels(rule: LogicalRule, models: WanGpModelSummary[]) {
+  return models.filter((model) => {
     const family = model.family.toLowerCase();
     const familyMatches = rule.family === "flux" ? family === "flux" || family === "flux2" : family === rule.family;
     return familyMatches && model.output === rule.output && (!rule.requiresImage || model.inputs.includes("image")) && (!rule.namePattern || rule.namePattern.test(model.name));
   });
+}
+
+export function matchModel(rule: LogicalRule, models: WanGpModelSummary[], preferredModelType?: string) {
+  const matches = matchingModels(rule, models);
+  const preferred = matches.find((model) => model.modelType === preferredModelType && model.availability === "available");
+  if (preferred) return preferred;
   if (rule.key === "ltx-2") {
-    const distilled = matches.find((model) => model.availability === "available" && /distilled/i.test(model.name));
+    const distilled = matches.find((model) => model.availability === "available" && /distilled.*1\.1/i.test(model.name)) ?? matches.find((model) => model.availability === "available" && /distilled/i.test(model.name));
     if (distilled) return distilled;
   }
   return matches.find((model) => model.availability === "available") ?? matches.find((model) => model.availability === "partial") ?? matches[0];
 }
 
-export async function discoverModels(client: WanGpClient): Promise<ModelOption[]> {
+export async function discoverModels(client: WanGpClient, selections: Record<string, string> = {}): Promise<ModelOption[]> {
   const models = [...await client.listModels("image"), ...await client.listModels("video")];
   return Promise.all(rules.filter(enabled).map(async (rule) => {
-    const model = matchModel(rule, models);
-    if (!model) return { key: rule.key, displayName: rule.displayName, workflowType: rule.workflowType, availability: "missing" as const, reason: "No matching installed WanGP model was found.", schema: {}, defaults: {}, capabilities: [], loraCatalog: { supported: false, loras: [], reason: "Model is not installed." } };
+    const matches = matchingModels(rule, models);
+    const candidates = matches.map(({ modelType, name, availability }) => ({ modelType, name, availability }));
+    const model = matchModel(rule, models, selections[selectionKey(rule)]);
+    if (!model) return { key: rule.key, displayName: rule.displayName, workflowType: rule.workflowType, availability: "missing" as const, reason: "No matching installed WanGP model was found.", schema: {}, defaults: {}, capabilities: [], loraCatalog: { supported: false, loras: [], reason: "Model is not installed." }, candidates };
     const [availability, schema, defaults, metadata, loraCatalog] = await Promise.all([
       client.getModelAvailability(model.modelType), client.getModelSchema(model.modelType).catch(() => ({})), client.getDefaultSettings(model.modelType), client.getModelMetadata(model.modelType), client.listLoras(model.modelType),
     ]);
     const capabilities = getWanGpCapabilities(metadata);
     const effectiveSchema = Object.keys(schema).length ? schema : { metadata };
-    return { key: rule.key, displayName: rule.displayName, workflowType: rule.workflowType, modelType: model.modelType, availability: availability.status, reason: availability.reason, schema: effectiveSchema, defaults, capabilities, loraCatalog };
+    return { key: rule.key, displayName: model.name || rule.displayName, workflowType: rule.workflowType, modelType: model.modelType, availability: availability.status, reason: availability.reason, schema: effectiveSchema, defaults, capabilities, loraCatalog, candidates };
   }));
 }

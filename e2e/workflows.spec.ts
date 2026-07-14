@@ -87,3 +87,12 @@ test("does not accept arbitrary filesystem paths as asset handles", async ({ req
   const response = await request.get("/api/assets/C:%5CWindows%5Cwin.ini/content");
   expect(response.status()).toBe(404);
 });
+
+test("shows exact WanGP model selections in Settings", async ({ page }) => {
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Approved models", exact: true })).toBeVisible();
+  const selectors = page.getByLabel("WanGP model");
+  await expect(selectors).toHaveCount(5);
+  await expect(page.getByText(/qwen_image_edit_fixture/)).toBeVisible();
+  await expect(page.getByText(/ltx2_fixture/)).toBeVisible();
+});

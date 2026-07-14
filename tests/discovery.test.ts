@@ -34,4 +34,12 @@ describe("model discovery", () => {
     const models = await discoverModels(new SchemaErrorClient());
     expect(models.find((model) => model.workflowType === "video-create")).toMatchObject({ availability: "available", schema: { metadata: expect.any(Object) } });
   });
+
+  it("honors an available exact model preference", () => {
+    const models = [
+      { modelType: "ltx2_22B_distilled", name: "LTX-2 Distilled 1.0", family: "ltx2", output: "video" as const, inputs: ["text", "image"], availability: "available" as const },
+      { modelType: "ltx2_22B_distilled_1_1", name: "LTX-2 Distilled 1.1", family: "ltx2", output: "video" as const, inputs: ["text", "image"], availability: "available" as const },
+    ];
+    expect(matchModel({ key: "ltx-2", displayName: "LTX", workflowType: "video-create", family: "ltx2", output: "video", requiresImage: true }, models, "ltx2_22B_distilled_1_1")?.modelType).toBe("ltx2_22B_distilled_1_1");
+  });
 });

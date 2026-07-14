@@ -3,6 +3,7 @@ import { discoverModels } from "@/lib/wan-gp/discovery";
 import { buildLtx2VideoSettings } from "@/lib/wan-gp/adapters/ltx2-video";
 import { buildQwenImageEditSettings } from "@/lib/wan-gp/adapters/qwen-image-edit";
 import { LiveWanGpClient } from "@/lib/wan-gp/live-client";
+import { DEFAULT_MODEL_SELECTIONS } from "@/lib/runtime/model-preferences";
 
 const runLive = process.env.WANGP_LIVE_TEST === "true";
 
@@ -16,12 +17,13 @@ describe.runIf(runLive)("live WanGP MCP", () => {
   });
 
   it("resolves configured application models", async () => {
-    const models = await discoverModels(client);
-    expect(models).not.toHaveLength(0);
+    const models = await discoverModels(client, DEFAULT_MODEL_SELECTIONS);
+    expect(models.find((model) => model.workflowType === "image-edit" && model.key === "qwen-image-edit")?.modelType).toBe("qwen_image_edit_plus2_20B");
+    expect(models.find((model) => model.workflowType === "video-create")?.modelType).toBe("ltx2_22B_distilled_1_1");
   });
 
   it("builds LTX start-image settings with a discovered LoRA", async () => {
-    const model = (await discoverModels(client)).find((candidate) => candidate.workflowType === "video-create");
+    const model = (await discoverModels(client, DEFAULT_MODEL_SELECTIONS)).find((candidate) => candidate.workflowType === "video-create");
     expect(model?.modelType).toBeTruthy(); expect(model?.loraCatalog.loras.length).toBeGreaterThan(0);
     const lora = model!.loraCatalog.loras[0];
     const settings = buildLtx2VideoSettings(
@@ -32,7 +34,7 @@ describe.runIf(runLive)("live WanGP MCP", () => {
   });
 
   it("builds Qwen image-edit settings with a source reference", async () => {
-    const model = (await discoverModels(client)).find((candidate) => candidate.workflowType === "image-edit" && candidate.key === "qwen-image-edit");
+    const model = (await discoverModels(client, DEFAULT_MODEL_SELECTIONS)).find((candidate) => candidate.workflowType === "image-edit" && candidate.key === "qwen-image-edit");
     expect(model?.modelType).toBeTruthy();
     const sourcePath = "C:\\input\\source.png";
     const settings = buildQwenImageEditSettings(
