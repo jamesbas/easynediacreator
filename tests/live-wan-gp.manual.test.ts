@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { discoverModels } from "@/lib/wan-gp/discovery";
 import { buildLtx2VideoSettings } from "@/lib/wan-gp/adapters/ltx2-video";
+import { buildQwenImageEditSettings } from "@/lib/wan-gp/adapters/qwen-image-edit";
 import { LiveWanGpClient } from "@/lib/wan-gp/live-client";
 
 const runLive = process.env.WANGP_LIVE_TEST === "true";
@@ -28,5 +29,16 @@ describe.runIf(runLive)("live WanGP MCP", () => {
       model!.defaults, model!.schema, model!.modelType!, "C:\\input\\start.png",
     );
     expect(settings).toMatchObject({ image_prompt_type: "S", image_start: "C:\\input\\start.png", activated_loras: [lora], loras_multipliers: "0.8" });
+  });
+
+  it("builds Qwen image-edit settings with a source reference", async () => {
+    const model = (await discoverModels(client)).find((candidate) => candidate.workflowType === "image-edit" && candidate.key === "qwen-image-edit");
+    expect(model?.modelType).toBeTruthy();
+    const sourcePath = "C:\\input\\source.png";
+    const settings = buildQwenImageEditSettings(
+      { sourceAssetId: crypto.randomUUID(), prompt: "Change the sky", negativePrompt: "blurry", modelKey: "qwen-image-edit", steps: 20, loras: [], advanced: {} },
+      model!.defaults, model!.schema, model!.modelType!, sourcePath,
+    );
+    expect(settings).toMatchObject({ image_mode: 1, image_refs: [sourcePath], video_prompt_type: "KI", num_inference_steps: 20 });
   });
 });

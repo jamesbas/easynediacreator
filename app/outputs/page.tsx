@@ -3,6 +3,8 @@ import { OutputCard } from "@/components/outputs/output-card";
 import { ClearOutputsButton } from "@/components/outputs/clear-outputs-button";
 import { listOutputs, publicAsset } from "@/lib/runtime/output-registry";
 
+export const dynamic = "force-dynamic";
+
 export default function OutputsPage() {
   const assets = listOutputs().map(publicAsset);
   const firstImageId = assets.find((asset) => asset.type === "image")?.id;

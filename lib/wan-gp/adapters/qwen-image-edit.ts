@@ -6,7 +6,9 @@ export function buildQwenImageEditSettings(request: ImageEditRequest, defaults: 
   const settings = { ...defaults };
   setDiscoveredSetting(settings, schema, defaults, modelType, ["prompt", "text_prompt", "instruction"], request.prompt, true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["negative_prompt"], request.negativePrompt, true);
-  setDiscoveredSetting(settings, schema, defaults, modelType, ["source_image", "input_image", "image"], sourcePath, true);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], [sourcePath], true);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], "KI", true);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["num_inference_steps", "steps"], request.steps, true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["resolution", "size"], request.resolution);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["seed"], request.seed);
   applyLoraSettings(settings, schema, defaults, modelType, request.loras);

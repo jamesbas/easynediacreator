@@ -38,6 +38,7 @@ test("uploads and edits an image", async ({ page }) => {
   await page.goto("/edit-image");
   await page.locator('input[type="file"]').first().setInputFiles({ name: "source.png", mimeType: "image/png", buffer: await png() });
   await page.getByLabel("Edit prompt").fill(prompt);
+  await expect(page.getByLabel("Steps")).toHaveValue("20");
   await expect(page.getByLabel("Negative prompt")).toHaveValue(/deformed anatomy/);
   await page.getByRole("button", { name: "Add LoRA" }).click();
   await page.locator('input[name="loraStrength"]').fill("0.9");

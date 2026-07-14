@@ -35,6 +35,7 @@ export type ImageCreateRequest = z.infer<typeof imageCreateRequestSchema>;
 export const imageEditRequestSchema = baseGenerationSchema.extend({
   sourceUploadId: z.string().uuid().optional(),
   sourceAssetId: z.string().uuid().optional(),
+  steps: z.number().int().min(1).max(200).default(20),
 }).refine((value) => Boolean(value.sourceUploadId) !== Boolean(value.sourceAssetId), { message: "Choose exactly one source image." });
 
 export type ImageEditRequest = z.infer<typeof imageEditRequestSchema>;

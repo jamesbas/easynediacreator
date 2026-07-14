@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_NEGATIVE_PROMPT, imageCreateRequestSchema, videoCreateRequestSchema } from "@/lib/requests";
+import { DEFAULT_NEGATIVE_PROMPT, imageCreateRequestSchema, imageEditRequestSchema, videoCreateRequestSchema } from "@/lib/requests";
 
 describe("generation request validation", () => {
   it("defaults image generation to 20 steps and enforces the supported range", () => {
@@ -9,6 +9,10 @@ describe("generation request validation", () => {
     expect(imageCreateRequestSchema.parse({ ...base, steps: 200 }).steps).toBe(200);
     expect(() => imageCreateRequestSchema.parse({ ...base, steps: 0 })).toThrow();
     expect(() => imageCreateRequestSchema.parse({ ...base, steps: 201 })).toThrow();
+  });
+
+  it("defaults image editing to 20 steps", () => {
+    expect(imageEditRequestSchema.parse({ prompt: "edit", modelKey: "qwen-image-edit", sourceUploadId: crypto.randomUUID() }).steps).toBe(20);
   });
 
   it("rejects duplicate LoRAs and path-like LoRA names", () => {
