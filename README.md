@@ -67,6 +67,8 @@ npm run build
 npm start
 ```
 
+On Windows, double-click `run-easy-media-generator.bat` to install missing dependencies, build the current source, and start the production server. Keep its console window open while using the app; press `Ctrl+C` to stop it.
+
 The `start` script binds to `127.0.0.1`. Do not add router port forwarding or bind the web app or MCP endpoint to `0.0.0.0`.
 
 The Tailscale CLI installed on this host supports:
