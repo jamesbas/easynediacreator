@@ -12,6 +12,7 @@ Powered by WanGP by DeepBeepMeep.
 - Add separate reference images to Qwen edits.
 - Apply the Qwen face-swap preset with its prompt, Lightning accelerator, face LoRA, strengths, and inference settings configured automatically.
 - Apply the exclusive Qwen Sharpen and Unblur preset using `Qwen-Image-Edit-Unblur-Upscale_20.safetensors` at strength 1.
+- Batch Face Swap or Sharpen and Unblur across up to 10 uploaded source images, creating one job per source with shared preset settings.
 - Generate LTX-2 videos from a required start image and optional end image.
 - Choose video duration from 1 to 20 seconds, with a 15-second default; the app converts it to WanGP's required aligned frame count.
 - Adjust LTX start-image/source strength from 0 to 1 and use the model's discovered inference-step default.
@@ -19,7 +20,7 @@ Powered by WanGP by DeepBeepMeep.
 - Select classifier-backed acceleration presets separately from character, style, motion, and other LoRAs.
 - Combine acceleration presets with additional validated content LoRAs; preset LoRAs are applied first.
 - Save a private default character prompt and insert it into image prompts at the cursor.
-- Follow, cancel, retry, and clear in-memory generation jobs.
+- Follow, cancel, retry, clear, and reuse the settings of in-memory generation jobs.
 - Browse, download, reuse, and remove current-session outputs.
 
 ## Requirements
@@ -108,6 +109,13 @@ See [lora-classifier.md](lora-classifier.md) for the investigation, confidence m
 - Flux.2 Klein image creation defaults to a verified low-memory recipe: `1024x1024`, 4 steps, and WanGP memory profile 4.5. Portrait and landscape options are also available.
 - WanGP control/reference state inherited from its UI is cleared for text-to-image creation.
 - Image Edit offers a **Sharpen and Unblur** toggle for Qwen. It defaults the editable prompt to `unblur and upscale`, preserves the prior prompt for restoration when disabled, keeps the current step count, applies only `Qwen-Image-Edit-Unblur-Upscale_20.safetensors` at strength 1, and disallows Face Swap, acceleration presets, and all other LoRAs for that job.
+- Face Swap and Sharpen and Unblur accept up to 10 uploaded, dropped, or pasted source images. Each source is submitted as a separate job using the same selected preset, prompt, references, and inference settings. Standard image edits continue to accept one source image.
+
+### Job setting reuse
+
+Completed, failed, and cancelled jobs provide **Reuse settings** on the Jobs page. It reopens the matching Create Image, Edit Image, or Create Video form with the saved prompt, model, generation controls, LoRAs, preset, and available source/reference uploads restored. If the saved model is no longer available, the form keeps the reusable values but requires another model before submission.
+
+Job request snapshots and upload handles are stored in memory, so setting reuse is available only until the app restarts or the finished job is cleared. Retry remains available for failed and cancelled jobs and immediately resubmits the saved request.
 
 ### Video workflow controls
 
@@ -155,7 +163,7 @@ For unattended Windows operation, run `npm start` from Task Scheduler at sign-in
 
 ## Current Limitations
 
-- Restarting clears jobs, job prompts, upload handles, and current-session output handles. The saved character prompt and model preferences persist locally.
+- Restarting clears jobs, reusable job settings, upload handles, and current-session output handles. The saved character prompt and model preferences persist locally.
 - Outputs shows current-session media; filesystem rediscovery is not enabled because older files lack trusted prompt/model metadata.
 - Acceleration classification is profile-first and intentionally conservative. Ambiguous LoRAs remain unclassified unless a private override is supplied.
 - The current WanGP MCP server may not expose LoRA discovery or typed acceleration recipes, so local filesystem/profile access is required for full catalog classification.

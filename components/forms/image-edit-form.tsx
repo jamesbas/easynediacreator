@@ -13,6 +13,7 @@ import { LoraSelector, readLoraSelections } from "./lora-selector";
 type FormModel = { key: string; displayName: string; availability: string; resolutions: string[]; defaultResolution: string; loraCatalog: LoraCatalog };
 type AssetOption = { id: string; filename: string; contentUrl: string };
 type ReferenceFile = { id: string; file: File; preview: string };
+const MAX_BATCH_SOURCES = 10;
 
 async function uploadImage(file: File) {
   const body = new FormData();
@@ -28,8 +29,7 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
   const previewUrls = useRef(new Set<string>());
   const previousPrompt = useRef("");
   const previousSteps = useRef(20);
-  const [file, setFile] = useState<File>();
-  const [preview, setPreview] = useState<string | undefined>(initialRequest?.sourceUploadId ? `/api/uploads/${initialRequest.sourceUploadId}/content` : undefined);
+  const [sourceFiles, setSourceFiles] = useState<ReferenceFile[]>([]);
   const [sourceUploadId, setSourceUploadId] = useState(initialRequest?.sourceUploadId ?? "");
   const [sourceAssetId, setSourceAssetId] = useState(initialRequest?.sourceAssetId ?? initialAssetId ?? "");
   const [referenceFiles, setReferenceFiles] = useState<ReferenceFile[]>([]);
@@ -46,10 +46,13 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
   const [reuseSelections, setReuseSelections] = useState(Boolean(reusableModel));
   const [error, setError] = useState(initialRequest && !reusableModel ? "The saved model is no longer available. Choose another model before submitting." : "");
   const [submitting, setSubmitting] = useState(false);
+  const [submissionProgress, setSubmissionProgress] = useState<{ current: number; total: number }>();
   const selected = models.find((model) => model.key === modelKey);
   const qwenModel = models.find((model) => model.key === "qwen-image-edit" && model.availability === "available");
   const sharpenUnblurAvailable = Boolean(qwenModel?.loraCatalog.loras.some((name) => name.toLocaleLowerCase() === SHARPEN_UNBLUR_LORA.name.toLocaleLowerCase()));
   const referenceCount = referenceFiles.length + referenceUploadIds.length + referenceAssetIds.length;
+  const batchPreset = faceSwap || sharpenUnblur;
+  const sourceCount = sourceFiles.length || (sourceUploadId || sourceAssetId ? 1 : 0);
 
   const createPreview = useCallback((next: File) => {
     const url = URL.createObjectURL(next);
@@ -57,18 +60,56 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
     return url;
   }, []);
 
-  const chooseFile = useCallback((next?: File) => {
-    setFile(next);
-    setPreview((current) => {
-      if (current && previewUrls.current.has(current)) {
-        URL.revokeObjectURL(current);
-        previewUrls.current.delete(current);
-      }
-      return next ? createPreview(next) : undefined;
+  const addSourceFiles = useCallback((files: File[]) => {
+    const valid = files.filter((item) => item.type.startsWith("image/"));
+    const remaining = (batchPreset ? MAX_BATCH_SOURCES : 1) - (batchPreset ? sourceFiles.length : 0);
+    const accepted = valid.slice(0, Math.max(0, remaining));
+    if (!accepted.length) {
+      setError(batchPreset && sourceFiles.length >= MAX_BATCH_SOURCES ? `Choose no more than ${MAX_BATCH_SOURCES} source images.` : "Choose a valid source image.");
+      return;
+    }
+    if (accepted.length !== files.length) setError(batchPreset ? `Only the first ${MAX_BATCH_SOURCES} valid source images were added.` : "Only one valid source image was added.");
+    const additions = accepted.map((item) => ({ id: crypto.randomUUID(), file: item, preview: createPreview(item) }));
+    setSourceFiles((current) => {
+      if (batchPreset) return [...current, ...additions];
+      current.forEach((item) => {
+        URL.revokeObjectURL(item.preview);
+        previewUrls.current.delete(item.preview);
+      });
+      return additions;
     });
     setSourceUploadId("");
-    if (next) setSourceAssetId("");
-  }, [createPreview]);
+    setSourceAssetId("");
+  }, [batchPreset, createPreview, sourceFiles.length]);
+
+  const removeSourceFile = (id: string) => {
+    setSourceFiles((current) => current.filter((item) => {
+      if (item.id !== id) return true;
+      URL.revokeObjectURL(item.preview);
+      previewUrls.current.delete(item.preview);
+      return false;
+    }));
+  };
+
+  const limitSourceFilesToOne = () => {
+    setSourceFiles((current) => {
+      current.slice(1).forEach((item) => {
+        URL.revokeObjectURL(item.preview);
+        previewUrls.current.delete(item.preview);
+      });
+      return current.slice(0, 1);
+    });
+  };
+
+  const clearSourceFiles = () => {
+    setSourceFiles((current) => {
+      current.forEach((item) => {
+        URL.revokeObjectURL(item.preview);
+        previewUrls.current.delete(item.preview);
+      });
+      return [];
+    });
+  };
 
   const addReferenceFiles = useCallback((files: File[]) => {
     const remaining = 8 - referenceCount;
@@ -105,6 +146,7 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
       setSteps(FACE_SWAP_STEPS);
       if (qwenModel) setModelKey(qwenModel.key);
     } else {
+      limitSourceFilesToOne();
       setPrompt(previousPrompt.current);
       setSteps(previousSteps.current);
     }
@@ -123,22 +165,24 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
       setPrompt(SHARPEN_UNBLUR_PROMPT);
       if (qwenModel) setModelKey(qwenModel.key);
     } else {
+      limitSourceFilesToOne();
       setPrompt(previousPrompt.current);
     }
   };
 
   useEffect(() => {
-    const urls = previewUrls.current;
     const paste = (event: ClipboardEvent) => {
-      const image = [...(event.clipboardData?.files ?? [])].find((item) => item.type.startsWith("image/"));
-      if (image) chooseFile(image);
+      const images = [...(event.clipboardData?.files ?? [])].filter((item) => item.type.startsWith("image/"));
+      if (images.length) addSourceFiles(images);
     };
     window.addEventListener("paste", paste);
-    return () => {
-      window.removeEventListener("paste", paste);
-      urls.forEach((url) => URL.revokeObjectURL(url));
-    };
-  }, [chooseFile]);
+    return () => window.removeEventListener("paste", paste);
+  }, [addSourceFiles]);
+
+  useEffect(() => {
+    const urls = previewUrls.current;
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, []);
 
   return <form className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]" onSubmit={async (event) => {
     event.preventDefault();
@@ -149,47 +193,61 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
       return;
     }
     setSubmitting(true);
+    setSubmissionProgress(undefined);
+    let submittedCount = 0;
     try {
-      const submittedSourceUploadId = file ? await uploadImage(file) : sourceUploadId || undefined;
+      const submittedSourceUploadIds: Array<string | undefined> = [];
+      for (const source of sourceFiles) submittedSourceUploadIds.push(await uploadImage(source.file));
+      if (!submittedSourceUploadIds.length) submittedSourceUploadIds.push(sourceUploadId || undefined);
       const submittedReferenceUploadIds = [...referenceUploadIds, ...await Promise.all(referenceFiles.map((reference) => uploadImage(reference.file)))];
       const data = new FormData(form);
-      const response = await fetch("/api/jobs/image-edit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sourceUploadId: submittedSourceUploadId,
-          sourceAssetId: submittedSourceUploadId ? undefined : sourceAssetId || undefined,
-          referenceUploadIds: submittedReferenceUploadIds,
-          referenceAssetIds,
-          faceSwap,
-          sharpenUnblur,
-          prompt,
-          negativePrompt: data.get("negativePrompt"),
-          modelKey,
-          resolution: data.get("resolution") || undefined,
-          steps,
-          seed: data.get("seed") ? Number(data.get("seed")) : undefined,
-          loraPresetId: faceSwap || sharpenUnblur ? undefined : data.get("loraPresetId") || undefined,
-          loras: faceSwap || sharpenUnblur ? [] : readLoraSelections(data),
-          advanced: {},
-        }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Image editing could not be started.");
-      router.push(`/jobs?focus=${result.job.id}`);
+      let lastJobId = "";
+      for (const submittedSourceUploadId of submittedSourceUploadIds) {
+        setSubmissionProgress({ current: submittedCount + 1, total: submittedSourceUploadIds.length });
+        const response = await fetch("/api/jobs/image-edit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceUploadId: submittedSourceUploadId,
+            sourceAssetId: submittedSourceUploadId ? undefined : sourceAssetId || undefined,
+            referenceUploadIds: submittedReferenceUploadIds,
+            referenceAssetIds,
+            faceSwap,
+            sharpenUnblur,
+            prompt,
+            negativePrompt: data.get("negativePrompt"),
+            modelKey,
+            resolution: data.get("resolution") || undefined,
+            steps,
+            seed: data.get("seed") ? Number(data.get("seed")) : undefined,
+            loraPresetId: faceSwap || sharpenUnblur ? undefined : data.get("loraPresetId") || undefined,
+            loras: faceSwap || sharpenUnblur ? [] : readLoraSelections(data),
+            advanced: {},
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error ?? "Image editing could not be started.");
+        submittedCount += 1;
+        lastJobId = String(result.job.id);
+      }
+      router.push(`/jobs?focus=${lastJobId}`);
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "Image editing could not be started.");
+      const message = submissionError instanceof Error ? submissionError.message : "Image editing could not be started.";
+      setError(submittedCount ? `${submittedCount} of ${sourceCount} jobs started. ${message}` : message);
+      if (submittedCount && sourceFiles.length) setSourceFiles((current) => current.slice(submittedCount));
       setSubmitting(false);
+      setSubmissionProgress(undefined);
     }
   }}>
     <div className="space-y-6">
       <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
-        <h2 className="text-sm font-bold">Source image</h2>
-        <label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); chooseFile(event.dataTransfer.files[0]); }} className="mt-3 flex min-h-52 cursor-pointer items-center justify-center overflow-hidden border border-dashed border-[#9ca69d] bg-[#f6f4ee] text-center hover:border-[var(--teal)]">
-          {preview ? <span className="relative block h-80 w-full"><Image src={preview} alt="Selected source preview" fill sizes="(max-width: 1024px) 100vw, 70vw" className="object-contain" unoptimized /></span> : <span><ImagePlus className="mx-auto mb-3 text-[var(--teal)]" size={30} /><strong className="block">Drop, paste, or choose an image</strong><span className="mt-1 block text-xs text-[var(--muted)]">JPEG, PNG, or WebP</span></span>}
-          <input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => chooseFile(event.target.files?.[0])} />
+        <div className="flex items-start justify-between gap-4"><div><h2 className="text-sm font-bold">Source {batchPreset ? "images" : "image"}</h2>{batchPreset && <p className="mt-1 text-xs leading-5 text-[var(--muted)]">Each source becomes a separate job with these preset settings.</p>}</div>{batchPreset && <span className="shrink-0 text-xs font-bold text-[var(--muted)]">{sourceCount}/{MAX_BATCH_SOURCES}</span>}</div>
+        <label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addSourceFiles([...event.dataTransfer.files]); }} className={`mt-3 flex cursor-pointer items-center justify-center overflow-hidden border border-dashed border-[#9ca69d] bg-[#f6f4ee] text-center hover:border-[var(--teal)] ${sourceFiles.length > 1 ? "min-h-28" : "min-h-52"}`}>
+          {sourceFiles.length === 1 ? <span className="relative block h-80 w-full"><Image src={sourceFiles[0].preview} alt="Selected source preview" fill sizes="(max-width: 1024px) 100vw, 70vw" className="object-contain" unoptimized /></span> : sourceFiles.length > 1 ? <span><ImagePlus className="mx-auto mb-2 text-[var(--teal)]" size={26} /><strong className="block">Add more source images</strong><span className="mt-1 block text-xs text-[var(--muted)]">{sourceFiles.length} selected</span></span> : sourceUploadId ? <span className="relative block h-80 w-full"><Image src={`/api/uploads/${sourceUploadId}/content`} alt="Selected source preview" fill sizes="(max-width: 1024px) 100vw, 70vw" className="object-contain" unoptimized /></span> : <span><ImagePlus className="mx-auto mb-3 text-[var(--teal)]" size={30} /><strong className="block">Drop, paste, or choose {batchPreset ? "source images" : "an image"}</strong><span className="mt-1 block text-xs text-[var(--muted)]">JPEG, PNG, or WebP{batchPreset ? `, up to ${MAX_BATCH_SOURCES}` : ""}</span></span>}
+          <input className="sr-only" type="file" multiple={batchPreset} accept="image/jpeg,image/png,image/webp" disabled={batchPreset && sourceFiles.length >= MAX_BATCH_SOURCES} onChange={(event) => { addSourceFiles([...(event.target.files ?? [])]); event.target.value = ""; }} />
         </label>
-        {assets.length > 0 && <label className="mt-4 block text-sm font-bold">Or choose an output<select value={sourceAssetId} onChange={(event) => { setSourceAssetId(event.target.value); if (event.target.value) chooseFile(); }} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 font-normal"><option value="">Select an image...</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>}
+        {sourceFiles.length > 1 && <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{sourceFiles.map((source, index) => <div key={source.id} className="relative aspect-square overflow-hidden border border-[var(--line)] bg-[#f6f4ee]"><Image src={source.preview} alt={`Source ${index + 1}`} fill sizes="(max-width: 640px) 50vw, 220px" className="object-cover" unoptimized /><span className="absolute bottom-2 left-2 rounded-sm bg-white px-2 py-1 text-xs font-bold shadow-sm">{index + 1}</span><button type="button" onClick={() => removeSourceFile(source.id)} title="Remove source" aria-label={`Remove source ${index + 1}`} className="absolute right-2 top-2 grid size-9 place-items-center rounded-md bg-white text-[var(--foreground)] shadow-sm"><Trash2 size={16} /></button></div>)}</div>}
+        {assets.length > 0 && <label className="mt-4 block text-sm font-bold">Or choose an output<select value={sourceAssetId} onChange={(event) => { setSourceAssetId(event.target.value); if (event.target.value) { clearSourceFiles(); setSourceUploadId(""); } }} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 font-normal"><option value="">Select an image...</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>}
       </section>
 
       <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
@@ -233,7 +291,7 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
       <label className="block text-sm font-bold">Steps<input name="steps" type="number" min="1" max="200" value={accelerationPreset?.settings.numInferenceSteps ?? steps} disabled={faceSwap || accelerationPreset?.settings.numInferenceSteps !== undefined} onChange={(event) => setSteps(Number(event.target.value))} required className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]" /></label>
       {faceSwap ? <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">Face-swap LoRAs</p><div className="mt-3 space-y-2">{FACE_SWAP_LORAS.map((lora) => <div key={lora.name} className="grid grid-cols-[minmax(0,1fr)_42px] gap-2 text-xs"><span className="truncate" title={lora.name}>{lora.name.split("/").at(-1)}</span><strong className="text-right">{lora.strength}</strong></div>)}</div></div> : sharpenUnblur ? <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">Sharpen and Unblur LoRA</p><div className="mt-3 grid grid-cols-[minmax(0,1fr)_42px] gap-2 text-xs"><span className="truncate" title={SHARPEN_UNBLUR_LORA.name}>{SHARPEN_UNBLUR_LORA.name}</span><strong className="text-right">{SHARPEN_UNBLUR_LORA.strength}</strong></div><p className="mt-2 text-[0.68rem] leading-4 text-[var(--muted)]">Other LoRAs are disabled for this preset.</p></div> : <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} initialLoras={reuseSelections ? initialRequest?.loras : undefined} initialPresetId={reuseSelections ? initialRequest?.loraPresetId : undefined} onPresetChange={(next) => { if (next) { previousAccelerationSteps.current = steps; setAccelerationPreset(next); } else { setAccelerationPreset(undefined); setSteps(previousAccelerationSteps.current); } }} />}
       <details className="border-t border-[var(--line)] pt-4"><summary className="cursor-pointer text-sm font-bold">Advanced</summary><label className="mt-4 block text-sm font-bold">Seed<input name="seed" type="number" min="0" max="2147483647" placeholder="Random" defaultValue={initialRequest?.seed} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3" /></label></details>
-      <button disabled={submitting || !modelKey || (!file && !sourceUploadId && !sourceAssetId) || (faceSwap && referenceCount !== 1)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-5 font-bold text-white disabled:opacity-50"><Paintbrush size={18} />{submitting ? "Submitting..." : faceSwap ? "Swap face" : sharpenUnblur ? "Sharpen image" : "Edit image"}</button>
+      <button disabled={submitting || !modelKey || !sourceCount || (faceSwap && referenceCount !== 1)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-5 font-bold text-white disabled:opacity-50"><Paintbrush size={18} />{submitting ? submissionProgress && submissionProgress.total > 1 ? `Submitting ${submissionProgress.current} of ${submissionProgress.total}...` : "Submitting..." : faceSwap ? sourceCount > 1 ? `Start ${sourceCount} face swaps` : "Swap face" : sharpenUnblur ? sourceCount > 1 ? `Sharpen ${sourceCount} images` : "Sharpen image" : "Edit image"}</button>
       <p className="flex gap-2 text-xs leading-5 text-[var(--muted)]"><Upload size={15} className="mt-0.5 shrink-0" />Images remain local and are sent to your configured WanGP server.</p>
     </aside>
   </form>;

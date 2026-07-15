@@ -101,22 +101,26 @@ test("uploads and edits an image", async ({ page }) => {
 });
 
 test("configures and submits a face-swap edit", async ({ page }) => {
-  const sourceUploadId = "00000000-0000-4000-8000-000000000001";
-  const referenceUploadId = "00000000-0000-4000-8000-000000000002";
+  const sourceUploadIds = ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"];
+  const referenceUploadId = "00000000-0000-4000-8000-000000000003";
   let uploadCount = 0;
-  let submitted: Record<string, unknown> | undefined;
+  const submitted: Record<string, unknown>[] = [];
   await page.route("**/api/uploads/image", async (route) => {
     uploadCount += 1;
-    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ upload: { id: uploadCount === 1 ? sourceUploadId : referenceUploadId } }) });
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ upload: { id: uploadCount <= sourceUploadIds.length ? sourceUploadIds[uploadCount - 1] : referenceUploadId } }) });
   });
   await page.route("**/api/jobs/image-edit", async (route) => {
-    submitted = route.request().postDataJSON() as Record<string, unknown>;
-    await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ job: { id: "00000000-0000-4000-8000-000000000003" } }) });
+    submitted.push(route.request().postDataJSON() as Record<string, unknown>);
+    await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ job: { id: crypto.randomUUID() } }) });
   });
   await page.goto("/edit-image");
+  await page.waitForLoadState("networkidle");
   const fileInputs = page.locator('input[type="file"]');
-  await fileInputs.nth(0).setInputFiles({ name: "source.png", mimeType: "image/png", buffer: await png("#e3482d") });
+  await fileInputs.nth(0).setInputFiles({ name: "source-one.png", mimeType: "image/png", buffer: await png("#e3482d") });
+  await expect(page.getByAltText("Selected source preview")).toBeVisible();
   await page.getByRole("switch", { name: /Face swap/ }).check();
+  await expect(page.getByRole("heading", { name: "Source images" })).toBeVisible();
+  await fileInputs.nth(0).setInputFiles({ name: "source-two.png", mimeType: "image/png", buffer: await png("#dda928") });
   await expect(page.getByLabel("Edit prompt")).toHaveValue(FACE_SWAP_PROMPT);
   await expect(page.getByLabel("Edit prompt")).toHaveAttribute("readonly", "");
   await expect(page.getByLabel("Model")).toHaveValue("qwen-image-edit");
@@ -125,14 +129,16 @@ test("configures and submits a face-swap edit", async ({ page }) => {
   await expect(page.getByText("bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors")).toBeVisible();
   await expect(page.getByText("0.8", { exact: true })).toBeVisible();
   await expect(page.getByText("0.5", { exact: true })).toBeVisible();
-  const submit = page.getByRole("button", { name: "Swap face" });
+  const submit = page.getByRole("button", { name: "Start 2 face swaps" });
   await expect(submit).toBeDisabled();
   await fileInputs.nth(1).setInputFiles({ name: "face.png", mimeType: "image/png", buffer: await png("#146c63") });
   await expect(submit).toBeEnabled();
   await page.screenshot({ path: "test-results/desktop-face-swap.png", fullPage: true });
   await submit.click();
   await expect(page).toHaveURL(/\/jobs/);
-  expect(submitted).toMatchObject({ sourceUploadId, referenceUploadIds: [referenceUploadId], referenceAssetIds: [], faceSwap: true, prompt: FACE_SWAP_PROMPT, modelKey: "qwen-image-edit", steps: 4, loras: [] });
+  expect(submitted).toHaveLength(2);
+  expect(submitted.map((request) => request.sourceUploadId)).toEqual(sourceUploadIds);
+  for (const request of submitted) expect(request).toMatchObject({ referenceUploadIds: [referenceUploadId], referenceAssetIds: [], faceSwap: true, prompt: FACE_SWAP_PROMPT, modelKey: "qwen-image-edit", steps: 4, loras: [] });
 });
 
 test("generates and serves an LTX-2 video", async ({ page }) => {
@@ -232,12 +238,16 @@ test("saves an edited default character prompt", async ({ page }) => {
 });
 
 test("configures and submits the exclusive Sharpen and Unblur preset", async ({ page }) => {
-  const sourceUploadId = "00000000-0000-4000-8000-000000000011";
-  let submitted: Record<string, unknown> | undefined;
-  await page.route("**/api/uploads/image", async (route) => route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ upload: { id: sourceUploadId } }) }));
-  await page.route("**/api/jobs/image-edit", async (route) => { submitted = route.request().postDataJSON() as Record<string, unknown>; await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ job: { id: "00000000-0000-4000-8000-000000000012" } }) }); });
+  const sourceUploadIds = ["00000000-0000-4000-8000-000000000011", "00000000-0000-4000-8000-000000000012"];
+  let uploadCount = 0;
+  const submitted: Record<string, unknown>[] = [];
+  await page.route("**/api/uploads/image", async (route) => {
+    const sourceUploadId = sourceUploadIds[uploadCount];
+    uploadCount += 1;
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ upload: { id: sourceUploadId } }) });
+  });
+  await page.route("**/api/jobs/image-edit", async (route) => { submitted.push(route.request().postDataJSON() as Record<string, unknown>); await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ job: { id: crypto.randomUUID() } }) }); });
   await page.goto("/edit-image");
-  await page.locator('input[type="file"]').first().setInputFiles({ name: "source.png", mimeType: "image/png", buffer: await png("#777777") });
   await page.getByLabel("Edit prompt").fill("Sharpen and restore fine detail");
   const sharpenToggle = page.getByRole("switch", { name: /Sharpen and Unblur/ });
   await sharpenToggle.check();
@@ -246,6 +256,11 @@ test("configures and submits the exclusive Sharpen and Unblur preset", async ({ 
   await expect(page.getByLabel("Edit prompt")).toHaveValue("Sharpen and restore fine detail");
   await sharpenToggle.check();
   await expect(page.getByLabel("Edit prompt")).toHaveValue(SHARPEN_UNBLUR_PROMPT);
+  await expect(page.getByRole("heading", { name: "Source images" })).toBeVisible();
+  await page.locator('input[type="file"]').first().setInputFiles([
+    { name: "soft-one.png", mimeType: "image/png", buffer: await png("#777777") },
+    { name: "soft-two.png", mimeType: "image/png", buffer: await png("#999999") },
+  ]);
   await expect(page.getByRole("switch", { name: /Face swap/ })).not.toBeChecked();
   await expect(page.getByLabel("Model")).toHaveValue("qwen-image-edit");
   await expect(page.getByLabel("Model")).toBeDisabled();
@@ -256,8 +271,12 @@ test("configures and submits the exclusive Sharpen and Unblur preset", async ({ 
   await expect(page.getByRole("button", { name: "Add LoRA" })).toHaveCount(0);
   await expect(page.getByLabel("Acceleration preset")).toHaveCount(0);
   await page.screenshot({ path: "test-results/desktop-sharpen-unblur.png", fullPage: true });
-  await page.getByRole("button", { name: "Sharpen image" }).click();
+  await page.getByRole("button", { name: "Sharpen 2 images" }).click();
   await expect(page).toHaveURL(/\/jobs/);
-  expect(submitted).toMatchObject({ sourceUploadId, faceSwap: false, sharpenUnblur: true, prompt: SHARPEN_UNBLUR_PROMPT, modelKey: "qwen-image-edit", steps: 20, loras: [] });
-  expect(submitted).not.toHaveProperty("loraPresetId");
+  expect(submitted).toHaveLength(2);
+  expect(submitted.map((request) => request.sourceUploadId)).toEqual(sourceUploadIds);
+  for (const request of submitted) {
+    expect(request).toMatchObject({ faceSwap: false, sharpenUnblur: true, prompt: SHARPEN_UNBLUR_PROMPT, modelKey: "qwen-image-edit", steps: 20, loras: [] });
+    expect(request).not.toHaveProperty("loraPresetId");
+  }
 });
