@@ -24,7 +24,16 @@ test("creates an image and exposes it in Outputs", async ({ page }) => {
   await page.screenshot({ path: "test-results/desktop-create-image.png", fullPage: true });
   await page.getByRole("button", { name: "Generate image" }).click();
   await expect(page).toHaveURL(/\/jobs/);
-  await expect(page.locator("article").filter({ hasText: prompt }).getByText("completed", { exact: true })).toBeVisible();
+  const completedJob = page.locator("article").filter({ hasText: prompt });
+  await expect(completedJob.getByText("completed", { exact: true })).toBeVisible();
+  await completedJob.getByRole("link", { name: "Reuse settings" }).click();
+  await expect(page).toHaveURL(/\/create-image\?fromJob=/);
+  await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(prompt);
+  await expect(page.locator('select[name="loraName"]').nth(0)).toHaveValue("editorial-style.safetensors");
+  await expect(page.locator('select[name="loraName"]').nth(1)).toHaveValue("product-photo.sft");
+  await expect(page.locator('input[name="loraStrength"]').nth(0)).toHaveValue("0.65");
+  await expect(page.locator('input[name="loraStrength"]').nth(1)).toHaveValue("1.1");
+  await page.goto("/jobs");
   await page.getByRole("button", { name: "Clear finished" }).click();
   await expect(page.locator("article").filter({ hasText: prompt })).toHaveCount(0);
   await page.goto("/outputs");
@@ -82,7 +91,13 @@ test("uploads and edits an image", async ({ page }) => {
   await page.locator('input[name="loraStrength"]').fill("0.9");
   await page.getByRole("button", { name: "Edit image" }).click();
   await expect(page).toHaveURL(/\/jobs/);
-  await expect(page.locator("article").filter({ hasText: prompt }).getByText("completed", { exact: true })).toBeVisible();
+  const completedJob = page.locator("article").filter({ hasText: prompt });
+  await expect(completedJob.getByText("completed", { exact: true })).toBeVisible();
+  await completedJob.getByRole("link", { name: "Reuse settings" }).click();
+  await expect(page).toHaveURL(/\/edit-image\?fromJob=/);
+  await expect(page.getByLabel("Edit prompt")).toHaveValue(prompt);
+  await expect(page.getByAltText("Selected source preview")).toBeVisible();
+  await expect(page.locator('input[name="loraStrength"]')).toHaveValue("0.9");
 });
 
 test("configures and submits a face-swap edit", async ({ page }) => {
@@ -144,7 +159,16 @@ test("generates and serves an LTX-2 video", async ({ page }) => {
   await page.getByRole("button", { name: "Generate video" }).click();
   const submitted = (await submittedRequest).postDataJSON();
   expect(submitted).toMatchObject({ durationSeconds: 6, sourceStrength: 0.4, steps: 9 });
-  await expect(page.locator("article").filter({ hasText: prompt }).getByText("completed", { exact: true })).toBeVisible();
+  const completedJob = page.locator("article").filter({ hasText: prompt });
+  await expect(completedJob.getByText("completed", { exact: true })).toBeVisible();
+  await completedJob.getByRole("link", { name: "Reuse settings" }).click();
+  await expect(page).toHaveURL(/\/create-video\?fromJob=/);
+  await expect(page.getByLabel("Video prompt")).toHaveValue(prompt);
+  await expect(page.getByLabel("Duration")).toHaveValue("6");
+  await expect(page.getByRole("slider", { name: "Start image / source strength" })).toHaveValue("0.4");
+  await expect(page.getByLabel("Steps")).toHaveValue("9");
+  await expect(page.getByAltText("Start image preview")).toBeVisible();
+  await expect(page.locator('select[name="loraName"]')).toHaveValue("cinematic-motion.safetensors");
   await page.goto("/outputs");
   const video = page.locator("video").first();
   await expect(video).toBeVisible();

@@ -6,10 +6,13 @@ import type { LoraAccelerationPreset, LoraCatalog } from "@/lib/types";
 
 type Row = { id: number; name: string; strength: number };
 
-export function LoraSelector({ catalog, onSelectionChange, onPresetChange }: { catalog: LoraCatalog; onSelectionChange?: (loras: { name: string; strength: number }[]) => void; onPresetChange?: (preset?: LoraAccelerationPreset) => void }) {
-  const [rows, setRows] = useState<Row[]>([]);
-  const [nextId, setNextId] = useState(1);
-  const [presetId, setPresetId] = useState("");
+export function LoraSelector({ catalog, initialLoras = [], initialPresetId, onSelectionChange, onPresetChange }: { catalog: LoraCatalog; initialLoras?: { name: string; strength: number }[]; initialPresetId?: string; onSelectionChange?: (loras: { name: string; strength: number }[]) => void; onPresetChange?: (preset?: LoraAccelerationPreset) => void }) {
+  const availableLoras = new Set(catalog.loras.map((name) => name.toLocaleLowerCase()));
+  const availablePresets = new Set((catalog.accelerationPresets ?? []).map((preset) => preset.id));
+  const reusableLoras = initialLoras.filter((lora) => availableLoras.has(lora.name.toLocaleLowerCase()));
+  const [rows, setRows] = useState<Row[]>(() => reusableLoras.map((lora, index) => ({ id: index + 1, ...lora })));
+  const [nextId, setNextId] = useState(reusableLoras.length + 1);
+  const [presetId, setPresetId] = useState(initialPresetId && availablePresets.has(initialPresetId) ? initialPresetId : "");
   useEffect(() => { onSelectionChange?.(rows.map(({ name, strength }) => ({ name, strength })).filter((lora) => lora.name)); }, [onSelectionChange, rows]);
 
   if (!catalog.supported) return <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">LoRAs</p><p className="mt-1 text-xs leading-5 text-[var(--muted)]">{catalog.reason ?? "LoRA discovery is unavailable for this model."}</p></div>;
@@ -41,6 +44,7 @@ export function LoraSelector({ catalog, onSelectionChange, onPresetChange }: { c
       </div>
       <p className="mt-2 text-[0.68rem] leading-4 text-[var(--muted)]">Strength defaults to 1. Other LoRAs are applied after the acceleration preset in selection order.</p>
       </fieldset>
+      {(reusableLoras.length !== initialLoras.length || (initialPresetId && !availablePresets.has(initialPresetId))) && <p className="text-xs leading-5 text-[var(--accent)]">Some saved LoRA settings are no longer available and were omitted.</p>}
     </div>
   );
 }

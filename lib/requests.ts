@@ -66,3 +66,8 @@ export const videoCreateRequestSchema = baseGenerationSchema.extend({
 
 export type VideoCreateRequest = z.infer<typeof videoCreateRequestSchema>;
 export type LoraSelection = z.infer<typeof loraSelectionSchema>;
+
+export type JobRequestSnapshot =
+  | { workflowType: "image-create"; request: ImageCreateRequest }
+  | { workflowType: "image-edit"; request: ImageEditRequest }
+  | { workflowType: "video-create"; request: VideoCreateRequest };

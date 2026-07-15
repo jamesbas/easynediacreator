@@ -44,7 +44,7 @@ export async function editImage(request: ImageEditRequest) {
     settings.activated_loras = [SHARPEN_UNBLUR_LORA.name];
     settings.loras_multipliers = `${SHARPEN_UNBLUR_LORA.strength}`;
   }
-  const job = createJob({ workflowType: "image-edit", modelKey: request.modelKey, prompt: normalizedRequest.prompt });
+  const job = createJob({ workflowType: "image-edit", modelKey: request.modelKey, prompt: normalizedRequest.prompt, requestSnapshot: { workflowType: "image-edit", request: normalizedRequest } });
   enqueueJob({ jobId: job.id, modelType: model.modelType, settings });
   return job;
 }

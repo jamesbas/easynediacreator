@@ -1,3 +1,5 @@
+import type { JobRequestSnapshot } from "@/lib/requests";
+
 export type WorkflowType = "image-create" | "image-edit" | "video-create";
 export type JobStatus = "draft" | "queued" | "running" | "completed" | "failed" | "cancel_requested" | "cancelled";
 
@@ -8,6 +10,7 @@ export type RuntimeJob = {
   modelKey: string;
   status: JobStatus;
   prompt: string;
+  requestSnapshot: JobRequestSnapshot;
   submittedAt: string;
   updatedAt: string;
   progressPercent?: number;

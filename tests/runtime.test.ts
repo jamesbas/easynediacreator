@@ -6,12 +6,19 @@ import { clearOutputs, getOutput, registerOutput, removeOutput, resetOutputsForT
 import { config } from "@/lib/config";
 import { isPathInsideRoot } from "@/lib/security/path-policy";
 
+const imageRequest = { prompt: "A lighthouse", negativePrompt: "fog", modelKey: "qwen-image", count: 1, steps: 20, loras: [], advanced: {} };
+function imageJob(prompt: string) {
+  const request = { ...imageRequest, prompt };
+  return createJob({ workflowType: "image-create", modelKey: request.modelKey, prompt, requestSnapshot: { workflowType: "image-create", request } });
+}
+
 describe("runtime policies", () => {
   const testFiles = ["kept-on-disk.png", "also-kept.png"].map((filename) => path.join(config.WANGP_OUTPUT_ROOT, filename));
   beforeEach(() => { resetJobsForTests(); resetOutputsForTests(); });
   afterEach(async () => Promise.all(testFiles.map((file) => fs.rm(file, { force: true }))));
   it("enforces valid job state transitions", () => {
-    const job = createJob({ workflowType: "image-create", modelKey: "qwen-image", prompt: "A lighthouse" });
+    const job = imageJob("A lighthouse");
+    expect(job.requestSnapshot).toEqual({ workflowType: "image-create", request: imageRequest });
     expect(updateJob(job.id, { status: "running" }).status).toBe("running");
     expect(() => updateJob(job.id, { status: "queued" })).toThrow(/Invalid job transition/);
   });
@@ -21,8 +28,8 @@ describe("runtime policies", () => {
     expect(isPathInsideRoot(path.resolve(root, "..", "private.txt"), root)).toBe(false);
   });
   it("clears only finished jobs", () => {
-    const active = createJob({ workflowType: "image-create", modelKey: "qwen-image", prompt: "Active" });
-    const completed = createJob({ workflowType: "image-create", modelKey: "qwen-image", prompt: "Done" });
+    const active = imageJob("Active");
+    const completed = imageJob("Done");
     updateJob(completed.id, { status: "running" }); updateJob(completed.id, { status: "completed" });
     expect(clearFinishedJobs()).toEqual([completed.id]);
     expect(getJob(active.id)).toBeDefined(); expect(getJob(completed.id)).toBeUndefined();

@@ -24,7 +24,7 @@ export async function createVideo(request: VideoCreateRequest) {
   const preset = resolveLoraPreset(request.loraPresetId, normalizedRequest.loras, model.loraCatalog, model.modelType, "video-create");
   const settings = buildLtx2VideoSettings(normalizedRequest, model.defaults, model.schema, model.modelType, startPath, endPath);
   applyLoraAccelerationPreset(settings, preset, normalizedRequest.loras);
-  const job = createJob({ workflowType: "video-create", modelKey: request.modelKey, prompt: request.prompt });
+  const job = createJob({ workflowType: "video-create", modelKey: request.modelKey, prompt: request.prompt, requestSnapshot: { workflowType: "video-create", request: normalizedRequest } });
   enqueueJob({ jobId: job.id, modelType: model.modelType, settings });
   return job;
 }

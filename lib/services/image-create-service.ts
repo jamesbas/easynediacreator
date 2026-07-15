@@ -13,7 +13,7 @@ export async function createImage(request: ImageCreateRequest) {
   const preset = resolveLoraPreset(request.loraPresetId, normalizedRequest.loras, model.loraCatalog, model.modelType, "image-create");
   const settings = request.modelKey === "qwen-image" ? buildQwenImageSettings(normalizedRequest, model.defaults, model.schema, model.modelType) : buildFluxKleinImageSettings(normalizedRequest, model.defaults, model.schema, model.modelType);
   applyLoraAccelerationPreset(settings, preset, normalizedRequest.loras);
-  const job = createJob({ workflowType: "image-create", modelKey: request.modelKey, prompt: request.prompt });
+  const job = createJob({ workflowType: "image-create", modelKey: request.modelKey, prompt: request.prompt, requestSnapshot: { workflowType: "image-create", request: normalizedRequest } });
   enqueueJob({ jobId: job.id, modelType: model.modelType, settings });
   return job;
 }

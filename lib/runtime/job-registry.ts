@@ -1,3 +1,4 @@
+import type { JobRequestSnapshot } from "@/lib/requests";
 import type { JobStatus, RuntimeJob, WorkflowType } from "@/lib/types";
 
 const transitions: Record<JobStatus, JobStatus[]> = {
@@ -8,7 +9,7 @@ const transitions: Record<JobStatus, JobStatus[]> = {
 const globalJobs = globalThis as unknown as { easyMediaJobs?: Map<string, RuntimeJob> };
 function store() { globalJobs.easyMediaJobs ??= new Map(); return globalJobs.easyMediaJobs; }
 
-export function createJob(input: { workflowType: WorkflowType; modelKey: string; prompt: string }) {
+export function createJob(input: { workflowType: WorkflowType; modelKey: string; prompt: string; requestSnapshot: JobRequestSnapshot }) {
   const now = new Date().toISOString();
   const job: RuntimeJob = { id: crypto.randomUUID(), ...input, status: "queued", submittedAt: now, updatedAt: now, progressPercent: 0, statusMessage: "Waiting for GPU" };
   store().set(job.id, job);
