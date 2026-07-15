@@ -12,6 +12,8 @@ Powered by WanGP by DeepBeepMeep.
 - Add separate reference images to Qwen edits.
 - Apply the Qwen face-swap preset with its prompt, Lightning accelerator, face LoRA, strengths, and inference settings configured automatically.
 - Generate LTX-2 videos from a required start image and optional end image.
+- Choose video duration from 1 to 20 seconds, with a 15-second default; the app converts it to WanGP's required aligned frame count.
+- Adjust LTX start-image/source strength from 0 to 1 and use the model's discovered inference-step default.
 - Select multiple model-aligned LoRAs with individual strengths.
 - Select classifier-backed acceleration presets separately from character, style, motion, and other LoRAs.
 - Combine acceleration presets with additional validated content LoRAs; preset LoRAs are applied first.
@@ -104,6 +106,12 @@ See [lora-classifier.md](lora-classifier.md) for the investigation, confidence m
 - Qwen Lightning/distilled recipes force CFG 1.
 - Flux.2 Klein image creation defaults to a verified low-memory recipe: `1024x1024`, 4 steps, and WanGP memory profile 4.5. Portrait and landscape options are also available.
 - WanGP control/reference state inherited from its UI is cleared for text-to-image creation.
+
+### Video workflow controls
+
+- **Duration** defaults to 15 seconds. LTX video length is controlled through aligned `video_length` frames rather than WanGP's unrelated audio-only `duration_seconds` field.
+- **Start image / source strength** maps to WanGP `input_video_strength` and accepts values from 0 to 1. The installed LTX model currently defaults to 0.85.
+- **Steps** maps to WanGP `num_inference_steps` and remains available because WanGP uses it as the LTX sampling step count. The installed distilled model currently defaults to 8; a selected acceleration preset may override it.
 
 ### Local application settings
 

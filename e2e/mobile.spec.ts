@@ -37,3 +37,15 @@ test("keeps the face-swap edit workflow usable on phone viewports", async ({ pag
   await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toBeVisible();
   await page.screenshot({ path: "test-results/mobile-face-swap.png", fullPage: true });
 });
+
+test("keeps LTX video controls usable on phone viewports", async ({ page }) => {
+  await page.goto("/create-video");
+  await expect(page.getByLabel("Duration")).toHaveValue("15");
+  await expect(page.getByRole("slider", { name: "Start image / source strength" })).toHaveValue("0.85");
+  await expect(page.getByLabel("Steps")).toHaveValue("8");
+  const action = page.getByRole("button", { name: "Generate video" });
+  await action.scrollIntoViewIfNeeded();
+  await expect(action).toBeInViewport();
+  await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toBeVisible();
+  await page.screenshot({ path: "test-results/mobile-create-video.png", fullPage: true });
+});

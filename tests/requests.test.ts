@@ -32,7 +32,9 @@ describe("generation request validation", () => {
 
   it("accepts 20 seconds but rejects longer video requests", () => {
     const base = { prompt: "test", modelKey: "ltx-2", startUploadId: crypto.randomUUID() };
-    expect(videoCreateRequestSchema.parse({ ...base, durationSeconds: 20 })).toMatchObject({ durationSeconds: 20, steps: 20, negativePrompt: DEFAULT_NEGATIVE_PROMPT });
+    expect(videoCreateRequestSchema.parse(base)).toMatchObject({ durationSeconds: 15, sourceStrength: 0.85, negativePrompt: DEFAULT_NEGATIVE_PROMPT });
+    expect(videoCreateRequestSchema.parse({ ...base, durationSeconds: 20, sourceStrength: 0 })).toMatchObject({ durationSeconds: 20, sourceStrength: 0 });
     expect(() => videoCreateRequestSchema.parse({ ...base, durationSeconds: 21 })).toThrow();
+    expect(() => videoCreateRequestSchema.parse({ ...base, sourceStrength: 1.1 })).toThrow();
   });
 });

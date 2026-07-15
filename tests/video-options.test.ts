@@ -6,11 +6,7 @@ describe("video duration options", () => {
     expect(videoDurationOptions).toEqual(Array.from({ length: 20 }, (_, index) => index + 1));
   });
 
-  it("derives a five-second default from 121 frames at 24 fps", () => {
-    expect(getDefaultVideoDuration({ video_length: 121, fps: 24 })).toBe(5);
-  });
-
-  it("uses WanGP's current force_fps setting", () => {
-    expect(getDefaultVideoDuration({ video_length: 121, force_fps: "30" })).toBe(4);
+  it("defaults the UI to fifteen seconds instead of inheriting stale WanGP values", () => {
+    expect(getDefaultVideoDuration({ duration_seconds: 0, video_length: 481, force_fps: "" })).toBe(15);
   });
 });

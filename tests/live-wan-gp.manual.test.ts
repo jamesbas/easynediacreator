@@ -27,10 +27,10 @@ describe.runIf(runLive)("live WanGP MCP", () => {
     expect(model?.modelType).toBeTruthy(); expect(model?.loraCatalog.loras.length).toBeGreaterThan(0);
     const lora = model!.loraCatalog.loras[0];
     const settings = buildLtx2VideoSettings(
-      { prompt: "Camera push", negativePrompt: "blurry", modelKey: "ltx-2", startAssetId: crypto.randomUUID(), steps: 20, loras: [{ name: lora, strength: 0.8 }], advanced: {} },
+      { prompt: "Camera push", negativePrompt: "blurry", modelKey: "ltx-2", startAssetId: crypto.randomUUID(), durationSeconds: 15, sourceStrength: 0.85, steps: 8, loras: [{ name: lora, strength: 0.8 }], advanced: {} },
       model!.defaults, model!.schema, model!.modelType!, "C:\\input\\start.png",
     );
-    expect(settings).toMatchObject({ image_prompt_type: "S", image_start: "C:\\input\\start.png", activated_loras: [lora], loras_multipliers: "0.8" });
+    expect(settings).toMatchObject({ image_prompt_type: "S", image_start: "C:\\input\\start.png", video_length: 361, duration_seconds: 0, input_video_strength: 0.85, num_inference_steps: 8, activated_loras: [lora], loras_multipliers: "0.8" });
   });
 
   it("builds Qwen image-edit settings with a source reference", async () => {

@@ -8,7 +8,20 @@ import { DEFAULT_NEGATIVE_PROMPT } from "@/lib/requests";
 import type { LoraCatalog } from "@/lib/types";
 import { LoraSelector, readLoraSelections } from "./lora-selector";
 
-type FormModel = { key: string; displayName: string; availability: string; resolutions: string[]; durations: number[]; defaultResolution: string; defaultDuration: number; defaultFps: number; supportsEndFrame: boolean; loraCatalog: LoraCatalog };
+type FormModel = {
+  key: string;
+  displayName: string;
+  availability: string;
+  resolutions: string[];
+  durations: number[];
+  defaultResolution: string;
+  defaultDuration: number;
+  defaultFps: number;
+  defaultSourceStrength: number;
+  defaultSteps: number;
+  supportsEndFrame: boolean;
+  loraCatalog: LoraCatalog;
+};
 type AssetOption = { id: string; filename: string; contentUrl: string };
 type PickedImage = { file?: File; assetId?: string; preview?: string };
 
@@ -20,18 +33,75 @@ export function VideoCreateForm({ models, assets, defaultModel, initialStartId }
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const selected = models.find((model) => model.key === modelKey);
+  const [sourceStrength, setSourceStrength] = useState(selected?.defaultSourceStrength ?? 0.85);
 
-  async function upload(file?: File) { if (!file) return undefined; const body = new FormData(); body.set("image", file); const response = await fetch("/api/uploads/image", { method: "POST", body }); const result = await response.json(); if (!response.ok) throw new Error(result.error); return result.upload.id as string; }
+  async function upload(file?: File) {
+    if (!file) return undefined;
+    const body = new FormData(); body.set("image", file);
+    const response = await fetch("/api/uploads/image", { method: "POST", body });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+    return result.upload.id as string;
+  }
 
   return <form className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]" onSubmit={async (event) => {
     event.preventDefault(); const form = event.currentTarget; setError(""); setSubmitting(true);
-    try { const startUploadId = await upload(start.file); const endUploadId = await upload(end.file); const data = new FormData(form); const response = await fetch("/api/jobs/video-create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ startUploadId, startAssetId: startUploadId ? undefined : start.assetId, endUploadId, endAssetId: endUploadId ? undefined : end.assetId, prompt: data.get("prompt"), negativePrompt: data.get("negativePrompt"), modelKey, resolution: data.get("resolution") || undefined, durationSeconds: Number(data.get("duration")), fps: Number(data.get("fps")), steps: Number(data.get("steps")), loraPresetId: data.get("loraPresetId") || undefined, seed: data.get("seed") ? Number(data.get("seed")) : undefined, loras: readLoraSelections(data), advanced: {} }) }); const result = await response.json(); if (!response.ok) throw new Error(result.error); router.push(`/jobs?focus=${result.job.id}`); } catch (caught) { setError(caught instanceof Error ? caught.message : "Video generation could not be started."); setSubmitting(false); }
+    try {
+      const startUploadId = await upload(start.file);
+      const endUploadId = await upload(end.file);
+      const data = new FormData(form);
+      const response = await fetch("/api/jobs/video-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startUploadId,
+          startAssetId: startUploadId ? undefined : start.assetId,
+          endUploadId,
+          endAssetId: endUploadId ? undefined : end.assetId,
+          prompt: data.get("prompt"),
+          negativePrompt: data.get("negativePrompt"),
+          modelKey,
+          resolution: data.get("resolution") || undefined,
+          durationSeconds: Number(data.get("duration")),
+          fps: Number(data.get("fps")),
+          sourceStrength: Number(data.get("sourceStrength")),
+          steps: Number(data.get("steps")),
+          loraPresetId: data.get("loraPresetId") || undefined,
+          seed: data.get("seed") ? Number(data.get("seed")) : undefined,
+          loras: readLoraSelections(data),
+          advanced: {},
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      router.push(`/jobs?focus=${result.job.id}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Video generation could not be started."); setSubmitting(false);
+    }
   }}>
     <div className="space-y-6">
-      <section className="grid gap-4 border border-[var(--line)] bg-[var(--surface)] p-5 sm:grid-cols-2 sm:p-7"><ImagePicker label="Start image" required value={start} onChange={setStart} assets={assets} /><ImagePicker label="End image" value={end} onChange={setEnd} assets={assets} disabled={!selected?.supportsEndFrame} /></section>
-      <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7"><label htmlFor="video-prompt" className="mb-2 block text-sm font-bold">Video prompt</label><textarea id="video-prompt" name="prompt" required rows={7} maxLength={4000} placeholder="Describe motion, camera movement, pacing, and what changes in the scene..." className="w-full rounded-md border border-[#b8beb7] bg-white p-4 leading-7 outline-none focus:border-[var(--teal)]" /><label htmlFor="video-negative-prompt" className="mb-2 mt-5 block text-sm font-bold">Negative prompt</label><textarea id="video-negative-prompt" name="negativePrompt" rows={4} maxLength={4000} defaultValue={DEFAULT_NEGATIVE_PROMPT} className="w-full rounded-md border border-[#b8beb7] bg-white p-4 text-sm leading-6 outline-none focus:border-[var(--teal)]" />{error && <p role="alert" className="mt-3 text-sm font-semibold text-[var(--accent)]">{error}</p>}</section>
+      <section className="grid gap-4 border border-[var(--line)] bg-[var(--surface)] p-5 sm:grid-cols-2 sm:p-7">
+        <ImagePicker label="Start image" required value={start} onChange={setStart} assets={assets} />
+        <ImagePicker label="End image" value={end} onChange={setEnd} assets={assets} disabled={!selected?.supportsEndFrame} />
+      </section>
+      <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
+        <label htmlFor="video-prompt" className="mb-2 block text-sm font-bold">Video prompt</label>
+        <textarea id="video-prompt" name="prompt" required rows={7} maxLength={4000} placeholder="Describe motion, camera movement, pacing, and what changes in the scene..." className="w-full rounded-md border border-[#b8beb7] bg-white p-4 leading-7 outline-none focus:border-[var(--teal)]" />
+        <label htmlFor="video-negative-prompt" className="mb-2 mt-5 block text-sm font-bold">Negative prompt</label>
+        <textarea id="video-negative-prompt" name="negativePrompt" rows={4} maxLength={4000} defaultValue={DEFAULT_NEGATIVE_PROMPT} className="w-full rounded-md border border-[#b8beb7] bg-white p-4 text-sm leading-6 outline-none focus:border-[var(--teal)]" />
+        {error && <p role="alert" className="mt-3 text-sm font-semibold text-[var(--accent)]">{error}</p>}
+      </section>
     </div>
-    <aside className="space-y-5 border border-[var(--line)] bg-[var(--surface)] p-5"><Control label="LTX-2 model"><select value={modelKey} onChange={(event) => setModelKey(event.target.value)} className="control"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available"}>{model.displayName}</option>)}</select></Control><Control label="Duration"><select key={`duration-${modelKey}`} name="duration" defaultValue={selected?.defaultDuration} className="control">{(selected?.durations.length ? selected.durations : [selected?.defaultDuration ?? 5]).map((value) => <option key={value} value={value}>{value} seconds</option>)}</select></Control><Control label="Resolution"><select key={`resolution-${modelKey}`} name="resolution" defaultValue={selected?.defaultResolution} className="control">{(selected?.resolutions.length ? selected.resolutions : [selected?.defaultResolution ?? "1280x720"]).map((value) => <option key={value}>{value}</option>)}</select></Control><Control label="Steps"><input className="control" name="steps" type="number" min="1" max="200" defaultValue="20" required /></Control><LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} /><details className="border-t border-[var(--line)] pt-4"><summary className="cursor-pointer text-sm font-bold">Advanced</summary><div className="mt-4 space-y-4"><Control label="Frames per second"><input className="control" name="fps" type="number" min="1" max="120" defaultValue={selected?.defaultFps ?? 24} /></Control><Control label="Seed"><input className="control" name="seed" type="number" min="0" max="2147483647" placeholder="Random" /></Control></div></details><button disabled={submitting || !modelKey || (!start.file && !start.assetId)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-5 font-bold text-white disabled:opacity-50"><Clapperboard size={18} />{submitting ? "Submitting..." : "Generate video"}</button></aside>
+    <aside className="space-y-5 border border-[var(--line)] bg-[var(--surface)] p-5">
+      <Control label="LTX-2 model"><select value={modelKey} onChange={(event) => { const next = models.find((model) => model.key === event.target.value); setModelKey(event.target.value); setSourceStrength(next?.defaultSourceStrength ?? 0.85); }} className="control"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available"}>{model.displayName}</option>)}</select></Control>
+      <Control label="Duration"><select key={`duration-${modelKey}`} name="duration" defaultValue={selected?.defaultDuration ?? 15} className="control">{(selected?.durations.length ? selected.durations : [15]).map((value) => <option key={value} value={value}>{value} seconds</option>)}</select></Control>
+      <Control label="Resolution"><select key={`resolution-${modelKey}`} name="resolution" defaultValue={selected?.defaultResolution} className="control">{(selected?.resolutions.length ? selected.resolutions : [selected?.defaultResolution ?? "1280x720"]).map((value) => <option key={value}>{value}</option>)}</select></Control>
+      <label className="block"><span className="mb-2 flex items-center justify-between gap-3 text-sm font-bold"><span>Start image / source strength</span><output htmlFor="source-strength">{sourceStrength.toFixed(2)}</output></span><input id="source-strength" aria-label="Start image / source strength" className="w-full accent-[var(--teal)]" name="sourceStrength" type="range" min="0" max="1" step="0.05" value={sourceStrength} onChange={(event) => setSourceStrength(Number(event.target.value))} /></label>
+      <Control label="Steps"><input key={`steps-${modelKey}`} className="control" name="steps" type="number" min="1" max="200" defaultValue={selected?.defaultSteps ?? 8} required /></Control>
+      <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} />
+      <details className="border-t border-[var(--line)] pt-4"><summary className="cursor-pointer text-sm font-bold">Advanced</summary><div className="mt-4 space-y-4"><Control label="Frames per second"><input className="control" name="fps" type="number" min="1" max="120" defaultValue={selected?.defaultFps ?? 24} /></Control><Control label="Seed"><input className="control" name="seed" type="number" min="0" max="2147483647" placeholder="Random" /></Control></div></details>
+      <button disabled={submitting || !modelKey || (!start.file && !start.assetId)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-5 font-bold text-white disabled:opacity-50"><Clapperboard size={18} />{submitting ? "Submitting..." : "Generate video"}</button>
+    </aside>
     <style jsx>{`.control{width:100%;min-height:44px;border:1px solid #b8beb7;border-radius:6px;background:#fff;padding:0 12px}`}</style>
   </form>;
 }

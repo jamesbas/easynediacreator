@@ -41,8 +41,8 @@ export function durationToFrameCount(durationSeconds: number, fps: number) {
 
 export function applyVideoDuration(target: Record<string, unknown>, schema: Record<string, unknown>, defaults: Record<string, unknown>, modelType: string, durationSeconds: number | undefined, fps: number) {
   if (durationSeconds === undefined) return;
-  const durationKey = setDiscoveredSetting(target, schema, defaults, modelType, ["duration_seconds", "duration"], durationSeconds);
-  if (!durationKey) setDiscoveredSetting(target, schema, defaults, modelType, ["video_length", "num_frames", "frame_num"], durationToFrameCount(durationSeconds, fps), true);
+  setDiscoveredSetting(target, schema, defaults, modelType, ["video_length", "num_frames", "frame_num"], durationToFrameCount(durationSeconds, fps), true);
+  setDiscoveredSetting(target, schema, defaults, modelType, ["duration_seconds"], 0);
 }
 
 export function commonImageSettings(request: ImageCreateRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string) {

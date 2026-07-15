@@ -55,7 +55,7 @@ export type ImageEditRequest = z.infer<typeof imageEditRequestSchema>;
 export const videoCreateRequestSchema = baseGenerationSchema.extend({
   startUploadId: z.string().uuid().optional(), startAssetId: z.string().uuid().optional(),
   endUploadId: z.string().uuid().optional(), endAssetId: z.string().uuid().optional(),
-  durationSeconds: z.number().int().min(1).max(20).optional(), fps: z.number().int().min(1).max(120).optional(), steps: z.number().int().min(1).max(200).default(20),
+  durationSeconds: z.number().int().min(1).max(20).default(15), fps: z.number().int().min(1).max(120).optional(), sourceStrength: z.number().finite().min(0).max(1).default(0.85), steps: z.number().int().min(1).max(200).optional(),
 }).refine((value) => Boolean(value.startUploadId) !== Boolean(value.startAssetId), { message: "Choose exactly one start image." })
   .refine((value) => !(value.endUploadId && value.endAssetId), { message: "Choose only one end image." });
 
