@@ -35,8 +35,18 @@ export type ImageCreateRequest = z.infer<typeof imageCreateRequestSchema>;
 export const imageEditRequestSchema = baseGenerationSchema.extend({
   sourceUploadId: z.string().uuid().optional(),
   sourceAssetId: z.string().uuid().optional(),
+  referenceUploadIds: z.array(z.string().uuid()).max(8).default([]),
+  referenceAssetIds: z.array(z.string().uuid()).max(8).default([]),
+  faceSwap: z.boolean().default(false),
   steps: z.number().int().min(1).max(200).default(20),
-}).refine((value) => Boolean(value.sourceUploadId) !== Boolean(value.sourceAssetId), { message: "Choose exactly one source image." });
+}).superRefine((value, context) => {
+  if (Boolean(value.sourceUploadId) === Boolean(value.sourceAssetId)) context.addIssue({ code: "custom", message: "Choose exactly one source image." });
+  const referenceCount = value.referenceUploadIds.length + value.referenceAssetIds.length;
+  if (referenceCount > 8) context.addIssue({ code: "custom", path: ["referenceUploadIds"], message: "Choose no more than 8 reference images." });
+  if (value.faceSwap && value.modelKey !== "qwen-image-edit") context.addIssue({ code: "custom", path: ["modelKey"], message: "Face swap requires Qwen Image Edit." });
+  if (value.faceSwap && referenceCount !== 1) context.addIssue({ code: "custom", path: ["referenceUploadIds"], message: "Face swap requires exactly one reference image." });
+  if (value.faceSwap && value.loras.length) context.addIssue({ code: "custom", path: ["loras"], message: "Face swap manages its required LoRAs automatically." });
+});
 
 export type ImageEditRequest = z.infer<typeof imageEditRequestSchema>;
 

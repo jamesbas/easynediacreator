@@ -12,7 +12,15 @@ describe("generation request validation", () => {
   });
 
   it("defaults image editing to 20 steps", () => {
-    expect(imageEditRequestSchema.parse({ prompt: "edit", modelKey: "qwen-image-edit", sourceUploadId: crypto.randomUUID() }).steps).toBe(20);
+    expect(imageEditRequestSchema.parse({ prompt: "edit", modelKey: "qwen-image-edit", sourceUploadId: crypto.randomUUID() })).toMatchObject({ steps: 20, referenceUploadIds: [], referenceAssetIds: [], faceSwap: false });
+  });
+
+  it("validates the face-swap image and model contract", () => {
+    const base = { prompt: "face swap", modelKey: "qwen-image-edit", sourceUploadId: crypto.randomUUID(), referenceUploadIds: [crypto.randomUUID()], faceSwap: true };
+    expect(imageEditRequestSchema.parse(base)).toMatchObject({ faceSwap: true, referenceUploadIds: base.referenceUploadIds });
+    expect(() => imageEditRequestSchema.parse({ ...base, modelKey: "flux-klein-9b" })).toThrow(/requires Qwen/);
+    expect(() => imageEditRequestSchema.parse({ ...base, referenceUploadIds: [] })).toThrow(/exactly one reference/);
+    expect(() => imageEditRequestSchema.parse({ ...base, loras: [{ name: "other.safetensors", strength: 1 }] })).toThrow(/manages its required LoRAs/);
   });
 
   it("rejects duplicate LoRAs and path-like LoRA names", () => {

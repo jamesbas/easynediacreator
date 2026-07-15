@@ -21,4 +21,20 @@ describe("image creation", () => {
     expect(publicAsset(asset!).contentUrl).toMatch(/^\/api\/assets\/[a-f0-9-]+\/content$/);
     expect(client.getLastSubmissionForTests()?.settings).toMatchObject({ negative_prompt: "blurry, deformed anatomy", num_inference_steps: 20, activated_loras: ["editorial-style.safetensors", "product-photo.sft"], loras_multipliers: "0.65 1.1" });
   }, 5000);
+
+  it("recovers from a transient WanGP polling failure", async () => {
+    class FlakyWanGpClient extends FakeWanGpClient {
+      private failedOnce = false;
+      override async getJob(jobId: string) {
+        if (!this.failedOnce) { this.failedOnce = true; throw new Error("Temporary MCP transport failure"); }
+        return super.getJob(jobId);
+      }
+    }
+    const client = new FlakyWanGpClient();
+    setWanGpClientForTests(client);
+    const created = await createImage({ prompt: "A resilient lighthouse", negativePrompt: "blurry", modelKey: "qwen-image", count: 1, steps: 20, loras: [], advanced: {} });
+    const deadline = Date.now() + 5000;
+    while (getJob(created.id)?.status !== "completed" && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(getJob(created.id)?.status).toBe("completed");
+  }, 6000);
 });

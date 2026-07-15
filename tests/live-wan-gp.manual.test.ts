@@ -38,7 +38,7 @@ describe.runIf(runLive)("live WanGP MCP", () => {
     expect(model?.modelType).toBeTruthy();
     const sourcePath = "C:\\input\\source.png";
     const settings = buildQwenImageEditSettings(
-      { sourceAssetId: crypto.randomUUID(), prompt: "Change the sky", negativePrompt: "blurry", modelKey: "qwen-image-edit", steps: 20, loras: [], advanced: {} },
+      { sourceAssetId: crypto.randomUUID(), referenceUploadIds: [], referenceAssetIds: [], faceSwap: false, prompt: "Change the sky", negativePrompt: "blurry", modelKey: "qwen-image-edit", steps: 20, loras: [], advanced: {} },
       model!.defaults, model!.schema, model!.modelType!, sourcePath,
     );
     expect(settings).toMatchObject({ image_mode: 1, image_refs: [sourcePath], video_prompt_type: "KI", num_inference_steps: 20 });

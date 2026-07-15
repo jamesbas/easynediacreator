@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
+import { FACE_SWAP_PROMPT } from "@/lib/face-swap-preset";
+import { DEFAULT_CHARACTER_PROMPT } from "@/lib/character-prompt";
 
 async function png(color = "#146c63") {
   return sharp({ create: { width: 96, height: 64, channels: 3, background: color } }).png().toBuffer();
@@ -33,6 +35,14 @@ test("creates an image and exposes it in Outputs", async ({ page }) => {
   await expect(page.getByText("A bright red observatory above a quiet forest")).toHaveCount(0);
 });
 
+test("uses conservative Flux Klein image defaults", async ({ page }) => {
+  await page.goto("/create-image");
+  await page.getByLabel("Model").selectOption("flux-klein-9b");
+  await expect(page.getByLabel("Resolution")).toHaveValue("1024x1024");
+  await expect(page.getByLabel("Steps")).toHaveValue("4");
+  await expect(page.getByLabel("Resolution").locator("option")).toHaveText(["1024x1024", "1344x768", "768x1344"]);
+});
+
 test("uploads and edits an image", async ({ page }) => {
   const prompt = "Replace the background with a coral sunrise";
   await page.goto("/edit-image");
@@ -45,6 +55,41 @@ test("uploads and edits an image", async ({ page }) => {
   await page.getByRole("button", { name: "Edit image" }).click();
   await expect(page).toHaveURL(/\/jobs/);
   await expect(page.locator("article").filter({ hasText: prompt }).getByText("completed", { exact: true })).toBeVisible();
+});
+
+test("configures and submits a face-swap edit", async ({ page }) => {
+  const sourceUploadId = "00000000-0000-4000-8000-000000000001";
+  const referenceUploadId = "00000000-0000-4000-8000-000000000002";
+  let uploadCount = 0;
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/api/uploads/image", async (route) => {
+    uploadCount += 1;
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ upload: { id: uploadCount === 1 ? sourceUploadId : referenceUploadId } }) });
+  });
+  await page.route("**/api/jobs/image-edit", async (route) => {
+    submitted = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ job: { id: "00000000-0000-4000-8000-000000000003" } }) });
+  });
+  await page.goto("/edit-image");
+  const fileInputs = page.locator('input[type="file"]');
+  await fileInputs.nth(0).setInputFiles({ name: "source.png", mimeType: "image/png", buffer: await png("#e3482d") });
+  await page.getByRole("switch", { name: /Face swap/ }).check();
+  await expect(page.getByLabel("Edit prompt")).toHaveValue(FACE_SWAP_PROMPT);
+  await expect(page.getByLabel("Edit prompt")).toHaveAttribute("readonly", "");
+  await expect(page.getByLabel("Model")).toHaveValue("qwen-image-edit");
+  await expect(page.getByLabel("Steps")).toHaveValue("4");
+  await expect(page.getByText("Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors")).toBeVisible();
+  await expect(page.getByText("bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors")).toBeVisible();
+  await expect(page.getByText("0.8", { exact: true })).toBeVisible();
+  await expect(page.getByText("0.5", { exact: true })).toBeVisible();
+  const submit = page.getByRole("button", { name: "Swap face" });
+  await expect(submit).toBeDisabled();
+  await fileInputs.nth(1).setInputFiles({ name: "face.png", mimeType: "image/png", buffer: await png("#146c63") });
+  await expect(submit).toBeEnabled();
+  await page.screenshot({ path: "test-results/desktop-face-swap.png", fullPage: true });
+  await submit.click();
+  await expect(page).toHaveURL(/\/jobs/);
+  expect(submitted).toMatchObject({ sourceUploadId, referenceUploadIds: [referenceUploadId], referenceAssetIds: [], faceSwap: true, prompt: FACE_SWAP_PROMPT, modelKey: "qwen-image-edit", steps: 4, loras: [] });
 });
 
 test("generates and serves an LTX-2 video", async ({ page }) => {
@@ -95,4 +140,28 @@ test("shows exact WanGP model selections in Settings", async ({ page }) => {
   await expect(selectors).toHaveCount(5);
   await expect(page.getByText(/qwen_image_edit_fixture/)).toBeVisible();
   await expect(page.getByText(/ltx2_fixture/)).toBeVisible();
+});
+
+test("inserts the default character into an existing image prompt", async ({ page }) => {
+  await page.goto("/create-image");
+  const prompt = page.getByLabel("Prompt", { exact: true });
+  await prompt.fill("Standing at the beach at sunset.");
+  await page.getByRole("button", { name: "Insert character" }).click();
+  await expect(prompt).toHaveValue(`Standing at the beach at sunset. ${DEFAULT_CHARACTER_PROMPT}`);
+});
+
+test("saves an edited default character prompt", async ({ page }) => {
+  const customPrompt = "A recurring character with silver hair and green eyes.";
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/api/settings/preferences", async (route) => {
+    submitted = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ preferences: submitted }) });
+  });
+  await page.goto("/settings");
+  await expect(page.getByLabel("Default character prompt")).toHaveValue(DEFAULT_CHARACTER_PROMPT);
+  await page.screenshot({ path: "test-results/desktop-character-prompt-settings.png", fullPage: true });
+  await page.getByLabel("Default character prompt").fill(customPrompt);
+  await page.getByRole("button", { name: "Save character prompt" }).click();
+  await expect(page.getByRole("status")).toHaveText("Character prompt saved.");
+  expect(submitted).toEqual({ characterPrompt: customPrompt });
 });

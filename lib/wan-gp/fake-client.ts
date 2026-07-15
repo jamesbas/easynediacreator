@@ -25,7 +25,7 @@ export class FakeWanGpClient implements WanGpClient {
   async getModelSchema(modelType: string) { const model = this.requireModel(modelType); return model.output === "video" ? { resolutions: ["1280x720", "720x1280"], supportsEndFrame: true } : { resolutions: ["1024x1024", "1344x768", "768x1344"], maxOutputs: 4 }; }
   async listLoras(modelType: string) {
     const model = this.requireModel(modelType);
-    const loras = model.family === "ltx2" ? ["cinematic-motion.safetensors", "handheld-camera.sft"] : model.family === "flux" ? ["graphic-novel.safetensors", "soft-light.safetensors"] : ["editorial-style.safetensors", "product-photo.sft"];
+    const loras = model.family === "ltx2" ? ["cinematic-motion.safetensors", "handheld-camera.sft"] : model.family === "flux" ? ["graphic-novel.safetensors", "soft-light.safetensors"] : ["editorial-style.safetensors", "product-photo.sft", "bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors"];
     return { supported: true, loras };
   }
   async generate(modelType: string, settings: Record<string, unknown>) { this.requireModel(modelType); this.submissions.push({ modelType, settings: structuredClone(settings) }); const jobId = crypto.randomUUID(); this.jobs.set(jobId, { id: jobId, status: "queued", progressPercent: 0, statusMessage: "Queued by fake WanGP", createdAt: Date.now(), modelType, settings }); return { jobId }; }

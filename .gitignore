@@ -42,6 +42,7 @@ yarn-error.log*
 /data/thumbnails/*
 /data/temp/*
 /data/model-selections.json
+/data/app-preferences.json
 !/data/uploads/.gitkeep
 !/data/outputs/.gitkeep
 !/data/thumbnails/.gitkeep

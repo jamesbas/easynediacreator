@@ -2,13 +2,16 @@ import { CheckCircle2, CircleAlert, CircleX } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { RefreshModelsButton } from "@/components/settings/refresh-models-button";
 import { ModelSelectionControl } from "@/components/settings/model-selection-control";
+import { CharacterPromptSetting } from "@/components/settings/character-prompt-setting";
 import { config } from "@/lib/config";
+import { getAppPreferences } from "@/lib/runtime/app-preferences";
 import { getModels } from "@/lib/runtime/model-cache";
 import { getWanGpClient } from "@/lib/wan-gp";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
+  const preferences = await getAppPreferences();
   let connected = false;
   let version: string | undefined;
   let models = [] as Awaited<ReturnType<typeof getModels>>;
@@ -27,6 +30,10 @@ export default async function SettingsPage() {
         <StatusCell label="WanGP version" value={version ?? "Unavailable"} />
         <StatusCell label="Client mode" value={config.WANGP_CLIENT_MODE === "fake" ? "Development fixture" : "Local WanGP"} />
         <StatusCell label="GPU concurrency" value={`${config.MAX_ACTIVE_GENERATION_JOBS} active`} />
+      </section>
+      <section className="mt-8">
+        <h2 className="mb-3 text-lg font-bold">Prompt defaults</h2>
+        <CharacterPromptSetting initialCharacterPrompt={preferences.characterPrompt} />
       </section>
       <section className="mt-8">
         <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-bold">Approved models</h2><span className="font-mono text-xs text-[var(--muted)]">{models.length} workflow mappings</span></div>

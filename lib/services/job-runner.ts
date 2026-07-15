@@ -7,6 +7,7 @@ import { logger } from "@/lib/telemetry";
 type QueueItem = { jobId: string; modelType: string; settings: Record<string, unknown> };
 const state = globalThis as unknown as { easyMediaQueue?: QueueItem[]; easyMediaRunning?: number; easyMediaRecipes?: Map<string, QueueItem> };
 function queue() { state.easyMediaQueue ??= []; state.easyMediaRunning ??= 0; return state.easyMediaQueue; }
+function errorDetails(error: unknown) { return error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : { value: error }; }
 
 export function enqueueJob(item: QueueItem) {
   if (queue().length >= config.MAX_QUEUED_JOBS) throw new Error("Job queue is full.");
@@ -32,7 +33,7 @@ async function processQueue() {
   } catch (error) {
     const current = getJob(job.id);
     if (current && !["cancelled", "completed"].includes(current.status)) updateJob(job.id, { status: "failed", statusMessage: "Generation failed", error: { message: error instanceof Error ? error.message : "WanGP generation failed." } });
-    logger.error({ event: "job.failed", jobId: job.id, error }, "Generation failed");
+    logger.error({ event: "job.failed", jobId: job.id, error: errorDetails(error) }, "Generation failed");
   } finally {
     state.easyMediaRunning = Math.max(0, (state.easyMediaRunning ?? 1) - 1);
     void processQueue();
@@ -40,11 +41,21 @@ async function processQueue() {
 }
 
 async function poll(jobId: string, wanGpJobId: string) {
+  let consecutiveFailures = 0;
   while (true) {
     await new Promise((resolve) => setTimeout(resolve, config.WANGP_CLIENT_MODE === "fake" ? 250 : 1500));
     const current = getJob(jobId);
     if (!current || current.status === "cancelled") return;
-    const snapshot = await getWanGpClient().getJob(wanGpJobId);
+    let snapshot;
+    try {
+      snapshot = await getWanGpClient().getJob(wanGpJobId);
+      consecutiveFailures = 0;
+    } catch (error) {
+      consecutiveFailures += 1;
+      logger.warn({ event: "job.poll_failed", jobId, wanGpJobId, attempt: consecutiveFailures, error: errorDetails(error) }, "WanGP job poll failed");
+      if (consecutiveFailures >= 3) throw error;
+      continue;
+    }
     if (snapshot.status === "queued" || snapshot.status === "running") {
       updateJob(jobId, { progressPercent: snapshot.progressPercent, statusMessage: snapshot.statusMessage });
       continue;

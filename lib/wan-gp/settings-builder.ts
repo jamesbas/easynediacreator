@@ -16,6 +16,8 @@ function knownKeys(schema: Record<string, unknown>, defaults: Record<string, unk
   if (imageInputs.start === true) keys.add("image_start");
   if (imageInputs.end === true) keys.add("image_end");
   if (imageInputs.reference === true) keys.add("image_refs");
+  if (imageInputs.control === true) keys.add("image_guide");
+  if (imageInputs.mask === true) keys.add("image_mask");
   return keys;
 }
 
@@ -28,9 +30,9 @@ export function setDiscoveredSetting(target: Record<string, unknown>, schema: Re
 }
 
 export function applyLoraSettings(target: Record<string, unknown>, schema: Record<string, unknown>, defaults: Record<string, unknown>, modelType: string, loras: LoraSelection[]) {
-  if (!loras.length) return;
-  setDiscoveredSetting(target, schema, defaults, modelType, ["activated_loras"], loras.map((lora) => lora.name), true);
-  setDiscoveredSetting(target, schema, defaults, modelType, ["loras_multipliers"], loras.map((lora) => `${lora.strength}`).join(" "), true);
+  const required = loras.length > 0;
+  setDiscoveredSetting(target, schema, defaults, modelType, ["activated_loras"], loras.map((lora) => lora.name), required);
+  setDiscoveredSetting(target, schema, defaults, modelType, ["loras_multipliers"], loras.map((lora) => `${lora.strength}`).join(" "), required);
 }
 
 export function durationToFrameCount(durationSeconds: number, fps: number) {
@@ -46,6 +48,13 @@ export function applyVideoDuration(target: Record<string, unknown>, schema: Reco
 export function commonImageSettings(request: ImageCreateRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string) {
   if (Object.keys(request.advanced).length) throw new Error("The selected model does not allow these advanced settings.");
   const settings = { ...defaults };
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mode"], 1, true);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["image_prompt_type"], "", true);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], "", true);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["image_guide"], null);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], []);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mask"], null);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["prompt_enhancer"], "");
   setDiscoveredSetting(settings, schema, defaults, modelType, ["prompt", "text_prompt"], request.prompt, true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["negative_prompt"], request.negativePrompt, true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["resolution", "size"], request.resolution);
