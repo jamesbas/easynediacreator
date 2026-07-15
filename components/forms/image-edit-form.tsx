@@ -1,11 +1,12 @@
 "use client";
 
-import { ImagePlus, Paintbrush, Trash2, Upload, UserRoundCheck } from "lucide-react";
+import { ImagePlus, Paintbrush, Sparkles, Trash2, Upload, UserRoundCheck } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FACE_SWAP_LORAS, FACE_SWAP_PROMPT, FACE_SWAP_STEPS } from "@/lib/face-swap-preset";
 import { DEFAULT_NEGATIVE_PROMPT } from "@/lib/requests";
+import { SHARPEN_UNBLUR_LORA, SHARPEN_UNBLUR_PROMPT } from "@/lib/sharpen-unblur-preset";
 import type { LoraAccelerationPreset, LoraCatalog } from "@/lib/types";
 import { LoraSelector, readLoraSelections } from "./lora-selector";
 
@@ -34,6 +35,7 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId }: 
   const [referenceAssetIds, setReferenceAssetIds] = useState<string[]>([]);
   const [modelKey, setModelKey] = useState(models.find((model) => model.key === defaultModel && model.availability === "available")?.key ?? models.find((model) => model.availability === "available")?.key ?? "");
   const [faceSwap, setFaceSwap] = useState(false);
+  const [sharpenUnblur, setSharpenUnblur] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [steps, setSteps] = useState(20);
   const [accelerationPreset, setAccelerationPreset] = useState<LoraAccelerationPreset>();
@@ -42,6 +44,7 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId }: 
   const [submitting, setSubmitting] = useState(false);
   const selected = models.find((model) => model.key === modelKey);
   const qwenModel = models.find((model) => model.key === "qwen-image-edit" && model.availability === "available");
+  const sharpenUnblurAvailable = Boolean(qwenModel?.loraCatalog.loras.some((name) => name.toLocaleLowerCase() === SHARPEN_UNBLUR_LORA.name.toLocaleLowerCase()));
   const referenceCount = referenceFiles.length + referenceAssetIds.length;
 
   const createPreview = useCallback((next: File) => {
@@ -87,14 +90,35 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId }: 
     setError("");
     setFaceSwap(enabled);
     if (enabled) {
-      previousPrompt.current = prompt;
-      previousSteps.current = steps;
+      if (!sharpenUnblur) {
+        previousPrompt.current = prompt;
+        previousSteps.current = steps;
+      }
+      setSharpenUnblur(false);
+      setAccelerationPreset(undefined);
       setPrompt(FACE_SWAP_PROMPT);
       setSteps(FACE_SWAP_STEPS);
       if (qwenModel) setModelKey(qwenModel.key);
     } else {
       setPrompt(previousPrompt.current);
       setSteps(previousSteps.current);
+    }
+  };
+
+  const setSharpenUnblurEnabled = (enabled: boolean) => {
+    setError("");
+    setSharpenUnblur(enabled);
+    if (enabled) {
+      if (!faceSwap) previousPrompt.current = prompt;
+      if (faceSwap) {
+        setFaceSwap(false);
+        setSteps(previousSteps.current);
+      }
+      setAccelerationPreset(undefined);
+      setPrompt(SHARPEN_UNBLUR_PROMPT);
+      if (qwenModel) setModelKey(qwenModel.key);
+    } else {
+      setPrompt(previousPrompt.current);
     }
   };
 
@@ -133,14 +157,15 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId }: 
           referenceUploadIds,
           referenceAssetIds,
           faceSwap,
+          sharpenUnblur,
           prompt,
           negativePrompt: data.get("negativePrompt"),
           modelKey,
           resolution: data.get("resolution") || undefined,
           steps,
           seed: data.get("seed") ? Number(data.get("seed")) : undefined,
-          loraPresetId: faceSwap ? undefined : data.get("loraPresetId") || undefined,
-          loras: faceSwap ? [] : readLoraSelections(data),
+          loraPresetId: faceSwap || sharpenUnblur ? undefined : data.get("loraPresetId") || undefined,
+          loras: faceSwap || sharpenUnblur ? [] : readLoraSelections(data),
           advanced: {},
         }),
       });
@@ -182,7 +207,7 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId }: 
     </div>
 
     <aside className="space-y-5 border border-[var(--line)] bg-[var(--surface)] p-5">
-      <div className="border-b border-[var(--line)] pb-5">
+      <div className="space-y-4 border-b border-[var(--line)] pb-5">
         <label className={`flex items-center justify-between gap-3 ${qwenModel ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}>
           <span><span className="flex items-center gap-2 text-sm font-bold"><UserRoundCheck size={17} />Face swap</span><span className="mt-1 block text-xs leading-5 text-[var(--muted)]">Apply the Qwen face-swap preset.</span></span>
           <span className="relative h-6 w-11 shrink-0">
@@ -190,13 +215,20 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId }: 
             <span aria-hidden="true" className="absolute inset-0 rounded-full bg-[#aeb5af] transition-colors after:absolute after:left-1 after:top-1 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:bg-[var(--teal)] peer-checked:after:translate-x-5 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--teal)]" />
           </span>
         </label>
+        <label className={`flex items-center justify-between gap-3 ${sharpenUnblurAvailable ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}>
+          <span><span className="flex items-center gap-2 text-sm font-bold"><Sparkles size={17} />Sharpen and Unblur</span><span className="mt-1 block text-xs leading-5 text-[var(--muted)]">Apply the Qwen unblur and upscale LoRA.</span></span>
+          <span className="relative h-6 w-11 shrink-0">
+            <input type="checkbox" className="peer absolute inset-0 z-10 m-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed" role="switch" checked={sharpenUnblur} disabled={!sharpenUnblurAvailable} onChange={(event) => setSharpenUnblurEnabled(event.target.checked)} />
+            <span aria-hidden="true" className="absolute inset-0 rounded-full bg-[#aeb5af] transition-colors after:absolute after:left-1 after:top-1 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:bg-[var(--teal)] peer-checked:after:translate-x-5 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--teal)]" />
+          </span>
+        </label>
       </div>
-      <label className="block text-sm font-bold">Model<select value={modelKey} disabled={faceSwap || referenceCount > 0} onChange={(event) => setModelKey(event.target.value)} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available" || (referenceCount > 0 && model.key !== "qwen-image-edit")}>{model.displayName}</option>)}</select></label>
+      <label className="block text-sm font-bold">Model<select value={modelKey} disabled={faceSwap || sharpenUnblur || referenceCount > 0} onChange={(event) => setModelKey(event.target.value)} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available" || (referenceCount > 0 && model.key !== "qwen-image-edit")}>{model.displayName}</option>)}</select></label>
       <label className="block text-sm font-bold">Resolution<select name="resolution" key={modelKey} defaultValue={selected?.defaultResolution} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3">{(selected?.resolutions.length ? selected.resolutions : [selected?.defaultResolution ?? "1024x1024"]).map((value) => <option key={value}>{value}</option>)}</select></label>
       <label className="block text-sm font-bold">Steps<input name="steps" type="number" min="1" max="200" value={accelerationPreset?.settings.numInferenceSteps ?? steps} disabled={faceSwap || accelerationPreset?.settings.numInferenceSteps !== undefined} onChange={(event) => setSteps(Number(event.target.value))} required className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]" /></label>
-      {faceSwap ? <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">Face-swap LoRAs</p><div className="mt-3 space-y-2">{FACE_SWAP_LORAS.map((lora) => <div key={lora.name} className="grid grid-cols-[minmax(0,1fr)_42px] gap-2 text-xs"><span className="truncate" title={lora.name}>{lora.name.split("/").at(-1)}</span><strong className="text-right">{lora.strength}</strong></div>)}</div></div> : <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} onPresetChange={(next) => { if (next) { previousAccelerationSteps.current = steps; setAccelerationPreset(next); } else { setAccelerationPreset(undefined); setSteps(previousAccelerationSteps.current); } }} />}
+      {faceSwap ? <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">Face-swap LoRAs</p><div className="mt-3 space-y-2">{FACE_SWAP_LORAS.map((lora) => <div key={lora.name} className="grid grid-cols-[minmax(0,1fr)_42px] gap-2 text-xs"><span className="truncate" title={lora.name}>{lora.name.split("/").at(-1)}</span><strong className="text-right">{lora.strength}</strong></div>)}</div></div> : sharpenUnblur ? <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">Sharpen and Unblur LoRA</p><div className="mt-3 grid grid-cols-[minmax(0,1fr)_42px] gap-2 text-xs"><span className="truncate" title={SHARPEN_UNBLUR_LORA.name}>{SHARPEN_UNBLUR_LORA.name}</span><strong className="text-right">{SHARPEN_UNBLUR_LORA.strength}</strong></div><p className="mt-2 text-[0.68rem] leading-4 text-[var(--muted)]">Other LoRAs are disabled for this preset.</p></div> : <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} onPresetChange={(next) => { if (next) { previousAccelerationSteps.current = steps; setAccelerationPreset(next); } else { setAccelerationPreset(undefined); setSteps(previousAccelerationSteps.current); } }} />}
       <details className="border-t border-[var(--line)] pt-4"><summary className="cursor-pointer text-sm font-bold">Advanced</summary><label className="mt-4 block text-sm font-bold">Seed<input name="seed" type="number" min="0" max="2147483647" placeholder="Random" className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3" /></label></details>
-      <button disabled={submitting || !modelKey || (!file && !sourceAssetId) || (faceSwap && referenceCount !== 1)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-5 font-bold text-white disabled:opacity-50"><Paintbrush size={18} />{submitting ? "Submitting..." : faceSwap ? "Swap face" : "Edit image"}</button>
+      <button disabled={submitting || !modelKey || (!file && !sourceAssetId) || (faceSwap && referenceCount !== 1)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-5 font-bold text-white disabled:opacity-50"><Paintbrush size={18} />{submitting ? "Submitting..." : faceSwap ? "Swap face" : sharpenUnblur ? "Sharpen image" : "Edit image"}</button>
       <p className="flex gap-2 text-xs leading-5 text-[var(--muted)]"><Upload size={15} className="mt-0.5 shrink-0" />Images remain local and are sent to your configured WanGP server.</p>
     </aside>
   </form>;

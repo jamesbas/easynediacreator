@@ -40,6 +40,7 @@ export const imageEditRequestSchema = baseGenerationSchema.extend({
   referenceUploadIds: z.array(z.string().uuid()).max(8).default([]),
   referenceAssetIds: z.array(z.string().uuid()).max(8).default([]),
   faceSwap: z.boolean().default(false),
+  sharpenUnblur: z.boolean().default(false),
   steps: z.number().int().min(1).max(200).default(20),
 }).superRefine((value, context) => {
   if (Boolean(value.sourceUploadId) === Boolean(value.sourceAssetId)) context.addIssue({ code: "custom", message: "Choose exactly one source image." });
@@ -48,6 +49,10 @@ export const imageEditRequestSchema = baseGenerationSchema.extend({
   if (value.faceSwap && value.modelKey !== "qwen-image-edit") context.addIssue({ code: "custom", path: ["modelKey"], message: "Face swap requires Qwen Image Edit." });
   if (value.faceSwap && referenceCount !== 1) context.addIssue({ code: "custom", path: ["referenceUploadIds"], message: "Face swap requires exactly one reference image." });
   if (value.faceSwap && value.loras.length) context.addIssue({ code: "custom", path: ["loras"], message: "Face swap manages its required LoRAs automatically." });
+  if (value.sharpenUnblur && value.modelKey !== "qwen-image-edit") context.addIssue({ code: "custom", path: ["modelKey"], message: "Sharpen and Unblur requires Qwen Image Edit." });
+  if (value.sharpenUnblur && value.faceSwap) context.addIssue({ code: "custom", path: ["sharpenUnblur"], message: "Choose either Face Swap or Sharpen and Unblur, not both." });
+  if (value.sharpenUnblur && value.loras.length) context.addIssue({ code: "custom", path: ["loras"], message: "Sharpen and Unblur cannot be combined with other LoRAs." });
+  if (value.sharpenUnblur && value.loraPresetId) context.addIssue({ code: "custom", path: ["loraPresetId"], message: "Sharpen and Unblur cannot be combined with an acceleration preset." });
 });
 
 export type ImageEditRequest = z.infer<typeof imageEditRequestSchema>;

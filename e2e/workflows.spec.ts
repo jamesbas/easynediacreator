@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
 import { FACE_SWAP_PROMPT } from "@/lib/face-swap-preset";
+import { SHARPEN_UNBLUR_LORA, SHARPEN_UNBLUR_PROMPT } from "@/lib/sharpen-unblur-preset";
 
 async function png(color = "#146c63") {
   return sharp({ create: { width: 96, height: 64, channels: 3, background: color } }).png().toBuffer();
@@ -204,4 +205,35 @@ test("saves an edited default character prompt", async ({ page }) => {
   await page.getByRole("button", { name: "Save character prompt" }).click();
   await expect(page.getByRole("status")).toHaveText("Character prompt saved.");
   expect(submitted).toEqual({ characterPrompt: customPrompt });
+});
+
+test("configures and submits the exclusive Sharpen and Unblur preset", async ({ page }) => {
+  const sourceUploadId = "00000000-0000-4000-8000-000000000011";
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/api/uploads/image", async (route) => route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ upload: { id: sourceUploadId } }) }));
+  await page.route("**/api/jobs/image-edit", async (route) => { submitted = route.request().postDataJSON() as Record<string, unknown>; await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ job: { id: "00000000-0000-4000-8000-000000000012" } }) }); });
+  await page.goto("/edit-image");
+  await page.locator('input[type="file"]').first().setInputFiles({ name: "source.png", mimeType: "image/png", buffer: await png("#777777") });
+  await page.getByLabel("Edit prompt").fill("Sharpen and restore fine detail");
+  const sharpenToggle = page.getByRole("switch", { name: /Sharpen and Unblur/ });
+  await sharpenToggle.check();
+  await expect(page.getByLabel("Edit prompt")).toHaveValue(SHARPEN_UNBLUR_PROMPT);
+  await sharpenToggle.uncheck();
+  await expect(page.getByLabel("Edit prompt")).toHaveValue("Sharpen and restore fine detail");
+  await sharpenToggle.check();
+  await expect(page.getByLabel("Edit prompt")).toHaveValue(SHARPEN_UNBLUR_PROMPT);
+  await expect(page.getByRole("switch", { name: /Face swap/ })).not.toBeChecked();
+  await expect(page.getByLabel("Model")).toHaveValue("qwen-image-edit");
+  await expect(page.getByLabel("Model")).toBeDisabled();
+  await expect(page.getByLabel("Steps")).toHaveValue("20");
+  await expect(page.getByLabel("Steps")).toBeEnabled();
+  await expect(page.getByText(SHARPEN_UNBLUR_LORA.name, { exact: true })).toBeVisible();
+  await expect(page.getByText("Sharpen and Unblur LoRA", { exact: true }).locator("..").getByText("1", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add LoRA" })).toHaveCount(0);
+  await expect(page.getByLabel("Acceleration preset")).toHaveCount(0);
+  await page.screenshot({ path: "test-results/desktop-sharpen-unblur.png", fullPage: true });
+  await page.getByRole("button", { name: "Sharpen image" }).click();
+  await expect(page).toHaveURL(/\/jobs/);
+  expect(submitted).toMatchObject({ sourceUploadId, faceSwap: false, sharpenUnblur: true, prompt: SHARPEN_UNBLUR_PROMPT, modelKey: "qwen-image-edit", steps: 20, loras: [] });
+  expect(submitted).not.toHaveProperty("loraPresetId");
 });

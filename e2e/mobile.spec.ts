@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
+import { SHARPEN_UNBLUR_LORA, SHARPEN_UNBLUR_PROMPT } from "@/lib/sharpen-unblur-preset";
 
 async function png(color: string) {
   return sharp({ create: { width: 96, height: 64, channels: 3, background: color } }).png().toBuffer();
@@ -48,4 +49,20 @@ test("keeps LTX video controls usable on phone viewports", async ({ page }) => {
   await expect(action).toBeInViewport();
   await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toBeVisible();
   await page.screenshot({ path: "test-results/mobile-create-video.png", fullPage: true });
+});
+
+test("keeps the Sharpen and Unblur preset usable on phone viewports", async ({ page }) => {
+  await page.goto("/edit-image");
+  await page.locator('input[type="file"]').first().setInputFiles({ name: "source.png", mimeType: "image/png", buffer: await png("#777777") });
+  await page.getByLabel("Edit prompt").fill("Sharpen and restore detail");
+  await page.getByRole("switch", { name: /Sharpen and Unblur/ }).check();
+  await expect(page.getByLabel("Edit prompt")).toHaveValue(SHARPEN_UNBLUR_PROMPT);
+  await expect(page.getByText(SHARPEN_UNBLUR_LORA.name, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add LoRA" })).toHaveCount(0);
+  const action = page.getByRole("button", { name: "Sharpen image" });
+  await action.scrollIntoViewIfNeeded();
+  await expect(action).toBeEnabled();
+  await expect(action).toBeInViewport();
+  await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toBeVisible();
+  await page.screenshot({ path: "test-results/mobile-sharpen-unblur.png", fullPage: true });
 });

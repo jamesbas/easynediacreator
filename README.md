@@ -11,6 +11,7 @@ Powered by WanGP by DeepBeepMeep.
 - Edit a source image with Qwen Image Edit or Flux.2 Klein.
 - Add separate reference images to Qwen edits.
 - Apply the Qwen face-swap preset with its prompt, Lightning accelerator, face LoRA, strengths, and inference settings configured automatically.
+- Apply the exclusive Qwen Sharpen and Unblur preset using `Qwen-Image-Edit-Unblur-Upscale_20.safetensors` at strength 1.
 - Generate LTX-2 videos from a required start image and optional end image.
 - Choose video duration from 1 to 20 seconds, with a 15-second default; the app converts it to WanGP's required aligned frame count.
 - Adjust LTX start-image/source strength from 0 to 1 and use the model's discovered inference-step default.
@@ -106,6 +107,7 @@ See [lora-classifier.md](lora-classifier.md) for the investigation, confidence m
 - Qwen Lightning/distilled recipes force CFG 1.
 - Flux.2 Klein image creation defaults to a verified low-memory recipe: `1024x1024`, 4 steps, and WanGP memory profile 4.5. Portrait and landscape options are also available.
 - WanGP control/reference state inherited from its UI is cleared for text-to-image creation.
+- Image Edit offers a **Sharpen and Unblur** toggle for Qwen. It defaults the editable prompt to `unblur and upscale`, preserves the prior prompt for restoration when disabled, keeps the current step count, applies only `Qwen-Image-Edit-Unblur-Upscale_20.safetensors` at strength 1, and disallows Face Swap, acceleration presets, and all other LoRAs for that job.
 
 ### Video workflow controls
 

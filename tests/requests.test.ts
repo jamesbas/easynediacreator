@@ -14,7 +14,16 @@ describe("generation request validation", () => {
   });
 
   it("defaults image editing to 20 steps", () => {
-    expect(imageEditRequestSchema.parse({ prompt: "edit", modelKey: "qwen-image-edit", sourceUploadId: crypto.randomUUID() })).toMatchObject({ steps: 20, referenceUploadIds: [], referenceAssetIds: [], faceSwap: false });
+    expect(imageEditRequestSchema.parse({ prompt: "edit", modelKey: "qwen-image-edit", sourceUploadId: crypto.randomUUID() })).toMatchObject({ steps: 20, referenceUploadIds: [], referenceAssetIds: [], faceSwap: false, sharpenUnblur: false });
+  });
+
+  it("validates the Sharpen and Unblur exclusivity contract", () => {
+    const base = { prompt: "Sharpen the image", modelKey: "qwen-image-edit", sourceUploadId: crypto.randomUUID(), sharpenUnblur: true };
+    expect(imageEditRequestSchema.parse(base).sharpenUnblur).toBe(true);
+    expect(() => imageEditRequestSchema.parse({ ...base, modelKey: "flux-klein-9b" })).toThrow(/requires Qwen/);
+    expect(() => imageEditRequestSchema.parse({ ...base, faceSwap: true, referenceUploadIds: [crypto.randomUUID()] })).toThrow(/either Face Swap or Sharpen/);
+    expect(() => imageEditRequestSchema.parse({ ...base, loras: [{ name: "style.safetensors", strength: 1 }] })).toThrow(/cannot be combined with other LoRAs/);
+    expect(() => imageEditRequestSchema.parse({ ...base, loraPresetId: "fast" })).toThrow(/cannot be combined with an acceleration preset/);
   });
 
   it("validates the face-swap image and model contract", () => {

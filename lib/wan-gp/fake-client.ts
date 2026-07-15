@@ -25,7 +25,7 @@ export class FakeWanGpClient implements WanGpClient {
   async getModelSchema(modelType: string) { const model = this.requireModel(modelType); return model.output === "video" ? { resolutions: ["1280x720", "720x1280"], supportsEndFrame: true } : { resolutions: ["1024x1024", "1344x768", "768x1344"], maxOutputs: 4 }; }
   async listLoras(modelType: string) {
     const model = this.requireModel(modelType);
-    const loras = model.family === "ltx2" ? ["cinematic-motion.safetensors", "handheld-camera.sft"] : model.family === "flux" ? ["graphic-novel.safetensors", "soft-light.safetensors"] : ["editorial-style.safetensors", "product-photo.sft", "Qwen-Lightning-4steps.safetensors", "bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors"];
+    const loras = model.family === "ltx2" ? ["cinematic-motion.safetensors", "handheld-camera.sft"] : model.family === "flux" ? ["graphic-novel.safetensors", "soft-light.safetensors"] : ["editorial-style.safetensors", "product-photo.sft", "Qwen-Lightning-4steps.safetensors", "bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors", "Qwen-Image-Edit-Unblur-Upscale_20.safetensors"];
     const accelerationPresets = modelType === "qwen_image_fixture" ? [{ id: "fixture-qwen-lightning", label: "Lightning Qwen - 4 Steps", modelTypes: [modelType], workflowTypes: ["image-create" as const], loras: [{ filename: "Qwen-Lightning-4steps.safetensors", multiplier: 1, required: true, role: "single" as const }], settings: { numInferenceSteps: 4, guidanceScale: 1, sampleSolver: "lightning" }, source: "mcp" as const, confidence: "authoritative" as const, evidence: [{ source: "mcp" as const, detail: "Fixture accelerator preset" }] }] : [];
     return { supported: true, loras, accelerationPresets };
   }
