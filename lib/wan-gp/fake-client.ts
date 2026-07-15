@@ -21,12 +21,13 @@ export class FakeWanGpClient implements WanGpClient {
   async listModels(output?: "image" | "video") { return fakeModels.filter((model) => !output || model.output === output); }
   async getModelMetadata(modelType: string) { const model = this.requireModel(modelType); return { ...model, capabilities: model.output === "video" ? ["start-frame", "end-frame"] : [] }; }
   async getModelAvailability(modelType: string) { this.requireModel(modelType); return { status: "available" as const }; }
-  async getDefaultSettings(modelType: string) { const model = this.requireModel(modelType); return model.output === "video" ? { resolution: "1280x720", durationSeconds: 5, fps: 24 } : { resolution: "1024x1024", count: 1 }; }
+  async getDefaultSettings(modelType: string) { const model = this.requireModel(modelType); return model.output === "video" ? { resolution: "1280x720", durationSeconds: 5, fps: 24 } : { resolution: "1024x1024", count: 1, guidance_scale: model.family === "qwen" ? 4 : 5 }; }
   async getModelSchema(modelType: string) { const model = this.requireModel(modelType); return model.output === "video" ? { resolutions: ["1280x720", "720x1280"], supportsEndFrame: true } : { resolutions: ["1024x1024", "1344x768", "768x1344"], maxOutputs: 4 }; }
   async listLoras(modelType: string) {
     const model = this.requireModel(modelType);
-    const loras = model.family === "ltx2" ? ["cinematic-motion.safetensors", "handheld-camera.sft"] : model.family === "flux" ? ["graphic-novel.safetensors", "soft-light.safetensors"] : ["editorial-style.safetensors", "product-photo.sft", "bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors"];
-    return { supported: true, loras };
+    const loras = model.family === "ltx2" ? ["cinematic-motion.safetensors", "handheld-camera.sft"] : model.family === "flux" ? ["graphic-novel.safetensors", "soft-light.safetensors"] : ["editorial-style.safetensors", "product-photo.sft", "Qwen-Lightning-4steps.safetensors", "bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors"];
+    const accelerationPresets = modelType === "qwen_image_fixture" ? [{ id: "fixture-qwen-lightning", label: "Lightning Qwen - 4 Steps", modelTypes: [modelType], workflowTypes: ["image-create" as const], loras: [{ filename: "Qwen-Lightning-4steps.safetensors", multiplier: 1, required: true, role: "single" as const }], settings: { numInferenceSteps: 4, guidanceScale: 1, sampleSolver: "lightning" }, source: "mcp" as const, confidence: "authoritative" as const, evidence: [{ source: "mcp" as const, detail: "Fixture accelerator preset" }] }] : [];
+    return { supported: true, loras, accelerationPresets };
   }
   async generate(modelType: string, settings: Record<string, unknown>) { this.requireModel(modelType); this.submissions.push({ modelType, settings: structuredClone(settings) }); const jobId = crypto.randomUUID(); this.jobs.set(jobId, { id: jobId, status: "queued", progressPercent: 0, statusMessage: "Queued by fake WanGP", createdAt: Date.now(), modelType, settings }); return { jobId }; }
   getLastSubmissionForTests() { return this.submissions.at(-1); }

@@ -1,6 +1,7 @@
 import { config } from "@/lib/config";
 import type { ModelOption, WorkflowType } from "@/lib/types";
 import type { WanGpClient, WanGpModelSummary } from "./client";
+import { classifyLoraCatalog } from "./lora-classifier/classify";
 
 export type LogicalRule = { key: string; displayName: string; workflowType: WorkflowType; family: string; output: "image" | "video"; requiresImage?: boolean; namePattern?: RegExp };
 
@@ -63,8 +64,9 @@ export async function discoverModels(client: WanGpClient, selections: Record<str
     const [availability, schema, defaults, metadata, loraCatalog] = await Promise.all([
       client.getModelAvailability(model.modelType), client.getModelSchema(model.modelType).catch(() => ({})), client.getDefaultSettings(model.modelType), client.getModelMetadata(model.modelType), client.listLoras(model.modelType),
     ]);
-    const capabilities = getWanGpCapabilities(metadata);
     const effectiveSchema = Object.keys(schema).length ? schema : { metadata };
-    return { key: rule.key, displayName: model.name || rule.displayName, workflowType: rule.workflowType, modelType: model.modelType, availability: availability.status, reason: availability.reason, schema: effectiveSchema, defaults, capabilities, loraCatalog, candidates };
+    const capabilities = getWanGpCapabilities(metadata);
+    const classifiedCatalog = await classifyLoraCatalog({ catalog: loraCatalog, schema: effectiveSchema, metadata, modelType: model.modelType, workflowType: rule.workflowType, profilesRoot: config.WANGP_PROFILES_ROOT, metadataRoot: config.WANGP_LORA_METADATA_ROOT, overridesPath: config.WANGP_LORA_CLASSIFIER_OVERRIDES });
+    return { key: rule.key, displayName: model.name || rule.displayName, workflowType: rule.workflowType, modelType: model.modelType, availability: availability.status, reason: availability.reason, schema: effectiveSchema, defaults, capabilities, loraCatalog: classifiedCatalog, candidates };
   }));
 }

@@ -59,6 +59,7 @@ export function commonImageSettings(request: ImageCreateRequest, defaults: Recor
   setDiscoveredSetting(settings, schema, defaults, modelType, ["negative_prompt"], request.negativePrompt, true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["resolution", "size"], request.resolution);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["seed"], request.seed);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["guidance_scale"], request.guidanceScale, request.guidanceScale !== undefined);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["num_inference_steps", "steps"], request.steps, true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["count", "num_outputs", "batch_size"], request.count === 1 ? undefined : request.count);
   applyLoraSettings(settings, schema, defaults, modelType, request.loras);

@@ -4,6 +4,7 @@ import { config } from "@/lib/config";
 import { getModels } from "@/lib/runtime/model-cache";
 import { getAppPreferences } from "@/lib/runtime/app-preferences";
 import { FLUX_KLEIN_IMAGE_PRESET } from "@/lib/wan-gp/image-presets";
+import { hasGuidanceOneMarker } from "@/lib/wan-gp/image-guidance";
 
 export const dynamic = "force-dynamic";
 export default async function CreateImagePage() {
@@ -21,6 +22,8 @@ export default async function CreateImagePage() {
       resolutions: fluxPreset ? [...fluxPreset.resolutions] : discoveredResolutions,
       defaultResolution: fluxPreset?.defaultResolution ?? (typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1024x1024"),
       defaultSteps: fluxPreset?.defaultSteps ?? (typeof model.defaults.num_inference_steps === "number" ? model.defaults.num_inference_steps : 20),
+      defaultGuidance: typeof model.defaults.guidance_scale === "number" ? model.defaults.guidance_scale : 1,
+      guidanceLocked: model.key === "qwen-image" && hasGuidanceOneMarker(model.modelType, model.displayName, model.defaults.type, model.defaults.sample_solver, model.defaults.activated_loras),
       loraCatalog: model.loraCatalog,
     };
   });

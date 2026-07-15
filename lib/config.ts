@@ -9,6 +9,9 @@ const envSchema = z.object({
   WANGP_MCP_URL: z.string().url().default("http://127.0.0.1:7866/mcp"),
   WANGP_OUTPUT_ROOT: z.string().min(1).default(path.join(process.cwd(), "data", "outputs")),
   WANGP_LORA_ROOT: optionalPath,
+  WANGP_PROFILES_ROOT: optionalPath,
+  WANGP_LORA_METADATA_ROOT: optionalPath,
+  WANGP_LORA_CLASSIFIER_OVERRIDES: optionalPath,
   WANGP_DISCOVERY_CACHE_MINUTES: z.coerce.number().int().min(1).default(30),
   WANGP_CLIENT_MODE: z.enum(["fake", "live"]).default("fake"),
   ENABLED_IMAGE_CREATE_MODELS: z.string().default("qwen-image,flux-klein-9b"),
@@ -33,8 +36,12 @@ function list(value: string) {
 }
 
 const env = envSchema.parse(process.env);
+const wanGpRoot = env.WANGP_LORA_ROOT ? path.dirname(path.resolve(env.WANGP_LORA_ROOT)) : undefined;
 export const config = Object.freeze({
   ...env,
+  WANGP_PROFILES_ROOT: env.WANGP_PROFILES_ROOT ?? (wanGpRoot ? path.join(wanGpRoot, "profiles") : undefined),
+  WANGP_LORA_METADATA_ROOT: env.WANGP_LORA_METADATA_ROOT ?? (wanGpRoot ? path.join(wanGpRoot, "loras_metadata") : undefined),
+  WANGP_LORA_CLASSIFIER_OVERRIDES: env.WANGP_LORA_CLASSIFIER_OVERRIDES ?? path.join(process.cwd(), "data", "lora-classifier-overrides.json"),
   enabledModels: {
     imageCreate: list(env.ENABLED_IMAGE_CREATE_MODELS),
     imageEdit: list(env.ENABLED_IMAGE_EDIT_MODELS),

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { LoraCatalog } from "@/lib/types";
 
 export const modelSummarySchema = z.preprocess((value) => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
@@ -82,4 +83,32 @@ export function parseWanGpStructuredContent(value: unknown) {
 
 export function record(value: unknown) {
   return z.record(z.string(), z.unknown()).parse(value);
+}
+
+const nativePresetSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  model_types: z.array(z.string()).optional(),
+  modelTypes: z.array(z.string()).optional(),
+  workflow_types: z.array(z.enum(["image-create", "image-edit", "video-create"])).optional(),
+  workflowTypes: z.array(z.enum(["image-create", "image-edit", "video-create"])).optional(),
+  loras: z.array(z.object({ filename: z.string().min(1), multiplier: z.union([z.string(), z.number()]).default(1), required: z.boolean().default(true), role: z.enum(["high-noise", "low-noise", "single"]).optional() })),
+  settings: z.object({ num_inference_steps: z.number().optional(), numInferenceSteps: z.number().optional(), guidance_scale: z.number().optional(), guidanceScale: z.number().optional(), sample_solver: z.string().optional(), sampleSolver: z.string().optional(), guidance_phases: z.number().optional(), guidancePhases: z.number().optional(), switch_threshold: z.number().optional(), switchThreshold: z.number().optional(), additional: z.record(z.string(), z.unknown()).optional() }).default({}),
+});
+
+export function parseLoraCatalogResponse(value: unknown, modelType: string): LoraCatalog {
+  if (Array.isArray(value)) return { supported: true, loras: parseLoraCatalog(value) };
+  const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const loras = parseLoraCatalog(source);
+  const presets = z.array(nativePresetSchema).default([]).parse(source.acceleration_presets ?? source.accelerationPresets ?? []);
+  return {
+    supported: source.supported !== false,
+    loras,
+    reason: typeof source.reason === "string" ? source.reason : undefined,
+    accelerationPresets: presets.map((preset) => ({
+      id: preset.id, label: preset.label, modelTypes: preset.model_types ?? preset.modelTypes ?? [modelType], workflowTypes: preset.workflow_types ?? preset.workflowTypes ?? [], loras: preset.loras,
+      settings: { numInferenceSteps: preset.settings.num_inference_steps ?? preset.settings.numInferenceSteps, guidanceScale: preset.settings.guidance_scale ?? preset.settings.guidanceScale, sampleSolver: preset.settings.sample_solver ?? preset.settings.sampleSolver, guidancePhases: preset.settings.guidance_phases ?? preset.settings.guidancePhases, switchThreshold: preset.settings.switch_threshold ?? preset.settings.switchThreshold, additional: preset.settings.additional },
+      source: "mcp", confidence: "authoritative", evidence: [{ source: "mcp", detail: "WanGP supplied typed acceleration preset" }],
+    })),
+  };
 }

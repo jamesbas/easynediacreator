@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FACE_SWAP_LORAS, FACE_SWAP_PROMPT, FACE_SWAP_STEPS } from "@/lib/face-swap-preset";
 import { DEFAULT_NEGATIVE_PROMPT } from "@/lib/requests";
-import type { LoraCatalog } from "@/lib/types";
+import type { LoraAccelerationPreset, LoraCatalog } from "@/lib/types";
 import { LoraSelector, readLoraSelections } from "./lora-selector";
 
 type FormModel = { key: string; displayName: string; availability: string; resolutions: string[]; defaultResolution: string; loraCatalog: LoraCatalog };
@@ -36,6 +36,8 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId }: 
   const [faceSwap, setFaceSwap] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [steps, setSteps] = useState(20);
+  const [accelerationPreset, setAccelerationPreset] = useState<LoraAccelerationPreset>();
+  const previousAccelerationSteps = useRef(20);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const selected = models.find((model) => model.key === modelKey);
@@ -137,6 +139,7 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId }: 
           resolution: data.get("resolution") || undefined,
           steps,
           seed: data.get("seed") ? Number(data.get("seed")) : undefined,
+          loraPresetId: faceSwap ? undefined : data.get("loraPresetId") || undefined,
           loras: faceSwap ? [] : readLoraSelections(data),
           advanced: {},
         }),
@@ -190,8 +193,8 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId }: 
       </div>
       <label className="block text-sm font-bold">Model<select value={modelKey} disabled={faceSwap || referenceCount > 0} onChange={(event) => setModelKey(event.target.value)} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available" || (referenceCount > 0 && model.key !== "qwen-image-edit")}>{model.displayName}</option>)}</select></label>
       <label className="block text-sm font-bold">Resolution<select name="resolution" key={modelKey} defaultValue={selected?.defaultResolution} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3">{(selected?.resolutions.length ? selected.resolutions : [selected?.defaultResolution ?? "1024x1024"]).map((value) => <option key={value}>{value}</option>)}</select></label>
-      <label className="block text-sm font-bold">Steps<input name="steps" type="number" min="1" max="200" value={steps} disabled={faceSwap} onChange={(event) => setSteps(Number(event.target.value))} required className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]" /></label>
-      {faceSwap ? <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">Face-swap LoRAs</p><div className="mt-3 space-y-2">{FACE_SWAP_LORAS.map((lora) => <div key={lora.name} className="grid grid-cols-[minmax(0,1fr)_42px] gap-2 text-xs"><span className="truncate" title={lora.name}>{lora.name.split("/").at(-1)}</span><strong className="text-right">{lora.strength}</strong></div>)}</div></div> : <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} />}
+      <label className="block text-sm font-bold">Steps<input name="steps" type="number" min="1" max="200" value={accelerationPreset?.settings.numInferenceSteps ?? steps} disabled={faceSwap || accelerationPreset?.settings.numInferenceSteps !== undefined} onChange={(event) => setSteps(Number(event.target.value))} required className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]" /></label>
+      {faceSwap ? <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">Face-swap LoRAs</p><div className="mt-3 space-y-2">{FACE_SWAP_LORAS.map((lora) => <div key={lora.name} className="grid grid-cols-[minmax(0,1fr)_42px] gap-2 text-xs"><span className="truncate" title={lora.name}>{lora.name.split("/").at(-1)}</span><strong className="text-right">{lora.strength}</strong></div>)}</div></div> : <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} onPresetChange={(next) => { if (next) { previousAccelerationSteps.current = steps; setAccelerationPreset(next); } else { setAccelerationPreset(undefined); setSteps(previousAccelerationSteps.current); } }} />}
       <details className="border-t border-[var(--line)] pt-4"><summary className="cursor-pointer text-sm font-bold">Advanced</summary><label className="mt-4 block text-sm font-bold">Seed<input name="seed" type="number" min="0" max="2147483647" placeholder="Random" className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3" /></label></details>
       <button disabled={submitting || !modelKey || (!file && !sourceAssetId) || (faceSwap && referenceCount !== 1)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-5 font-bold text-white disabled:opacity-50"><Paintbrush size={18} />{submitting ? "Submitting..." : faceSwap ? "Swap face" : "Edit image"}</button>
       <p className="flex gap-2 text-xs leading-5 text-[var(--muted)]"><Upload size={15} className="mt-0.5 shrink-0" />Images remain local and are sent to your configured WanGP server.</p>

@@ -1,18 +1,22 @@
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
-import { DEFAULT_CHARACTER_PROMPT } from "@/lib/character-prompt";
 
 async function png(color: string) {
   return sharp({ create: { width: 96, height: 64, channels: 3, background: color } }).png().toBuffer();
 }
 
 test("keeps the creation workflow and bottom navigation usable on phone viewports", async ({ page }) => {
+  const settings = await (await page.request.get("/api/settings")).json();
+  const savedCharacterPrompt = String(settings.preferences.characterPrompt);
   await page.goto("/create-image");
   await expect(page.getByRole("heading", { name: "Create an image" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeHidden();
   await page.getByRole("button", { name: "Insert character" }).click();
-  await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(DEFAULT_CHARACTER_PROMPT);
+  await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(savedCharacterPrompt);
+  await page.getByLabel("Acceleration preset").selectOption("fixture-qwen-lightning");
+  await expect(page.getByLabel("Steps")).toHaveValue("4");
+  await expect(page.getByLabel("Guidance (CFG)")).toHaveValue("1");
   const action = page.getByRole("button", { name: "Generate image" });
   await action.scrollIntoViewIfNeeded();
   await expect(action).toBeInViewport();

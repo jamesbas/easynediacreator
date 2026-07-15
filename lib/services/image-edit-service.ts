@@ -7,7 +7,7 @@ import { getUpload } from "@/lib/uploads/storage";
 import { buildFluxKleinEditSettings } from "@/lib/wan-gp/adapters/flux-klein-edit";
 import { buildQwenImageEditSettings } from "@/lib/wan-gp/adapters/qwen-image-edit";
 import { enqueueJob } from "./job-runner";
-import { validateModelLoras } from "./lora-service";
+import { applyLoraAccelerationPreset, resolveLoraPreset, validateModelLoras } from "./lora-service";
 
 export async function editImage(request: ImageEditRequest) {
   const model = (await getModels()).find((candidate) => candidate.workflowType === "image-edit" && candidate.key === request.modelKey);
@@ -29,8 +29,10 @@ export async function editImage(request: ImageEditRequest) {
     if (!model.loraCatalog.supported || !model.loraCatalog.loras.some((name) => name.toLocaleLowerCase() === faceLora)) throw new Error(`Face swap requires '${FACE_SWAP_LORAS[1].name}' in the Qwen LoRA catalog.`);
   }
   const normalizedRequest = { ...request, prompt: request.faceSwap ? FACE_SWAP_PROMPT : request.prompt, loras: validateModelLoras(request.loras, model.loraCatalog) };
+  const preset = resolveLoraPreset(request.loraPresetId, normalizedRequest.loras, model.loraCatalog, model.modelType, "image-edit");
   const referencePaths = references.filter((reference): reference is string => Boolean(reference));
   const settings = request.modelKey === "qwen-image-edit" ? buildQwenImageEditSettings(normalizedRequest, model.defaults, model.schema, model.modelType, source, referencePaths) : buildFluxKleinEditSettings(normalizedRequest, model.defaults, model.schema, model.modelType, source);
+  applyLoraAccelerationPreset(settings, preset, normalizedRequest.loras);
   const job = createJob({ workflowType: "image-edit", modelKey: request.modelKey, prompt: normalizedRequest.prompt });
   enqueueJob({ jobId: job.id, modelType: model.modelType, settings });
   return job;

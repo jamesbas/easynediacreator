@@ -5,7 +5,7 @@ import { getOutput } from "@/lib/runtime/output-registry";
 import { getUpload } from "@/lib/uploads/storage";
 import { buildLtx2VideoSettings } from "@/lib/wan-gp/adapters/ltx2-video";
 import { enqueueJob } from "./job-runner";
-import { validateModelLoras } from "./lora-service";
+import { applyLoraAccelerationPreset, resolveLoraPreset, validateModelLoras } from "./lora-service";
 
 function imagePath(uploadId?: string, assetId?: string) {
   if (uploadId) return getUpload(uploadId)?.path;
@@ -21,7 +21,9 @@ export async function createVideo(request: VideoCreateRequest) {
   if ((request.endUploadId || request.endAssetId) && !endPath) throw new Error("End image could not be found.");
   if (endPath && !model.capabilities.includes("end-frame")) throw new Error("End frame is not supported by this LTX-2 configuration.");
   const normalizedRequest = { ...request, loras: validateModelLoras(request.loras, model.loraCatalog) };
+  const preset = resolveLoraPreset(request.loraPresetId, normalizedRequest.loras, model.loraCatalog, model.modelType, "video-create");
   const settings = buildLtx2VideoSettings(normalizedRequest, model.defaults, model.schema, model.modelType, startPath, endPath);
+  applyLoraAccelerationPreset(settings, preset, normalizedRequest.loras);
   const job = createJob({ workflowType: "video-create", modelKey: request.modelKey, prompt: request.prompt });
   enqueueJob({ jobId: job.id, modelType: model.modelType, settings });
   return job;

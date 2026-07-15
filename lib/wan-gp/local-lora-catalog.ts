@@ -6,6 +6,26 @@ function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
+function isLoraFilename(name: string) {
+  return [".safetensors", ".sft"].includes(path.extname(name).toLowerCase());
+}
+
+export async function getLocalLoraFingerprint(loraRoot?: string) {
+  if (!loraRoot) return undefined;
+  try {
+    const rootEntries = await fs.readdir(path.resolve(loraRoot), { withFileTypes: true });
+    const directories = rootEntries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort((left, right) => left.localeCompare(right));
+    const catalogs = await Promise.all(directories.map(async (directoryName) => {
+      const entries = await fs.readdir(path.join(loraRoot, directoryName), { withFileTypes: true });
+      const filenames = entries.filter((entry) => entry.isFile() && isLoraFilename(entry.name)).map((entry) => entry.name).sort((left, right) => left.localeCompare(right));
+      return `${directoryName}:${filenames.join("|")}`;
+    }));
+    return catalogs.join(";");
+  } catch {
+    return "unavailable";
+  }
+}
+
 export function getLoraDirectoryName(schema: Record<string, unknown>) {
   const modelDef = object(schema.model_def);
   const metadata = object(schema.metadata);
@@ -15,7 +35,7 @@ export function getLoraDirectoryName(schema: Record<string, unknown>) {
   const baseModelType = String(metadata.base_model_type ?? modelDef.base_model_type ?? schema.model_type ?? "").toLowerCase();
   if (family === "qwen") return "qwen";
   if (family === "ltx2") return "ltx2";
-  if (family === "flux") {
+  if (family === "flux" || family === "flux2") {
     if (baseModelType.includes("flux2_klein_9b")) return "flux2_klein_9b";
     if (baseModelType.includes("flux2_klein_4b")) return "flux2_klein_4b";
     return baseModelType.includes("flux2") ? "flux2" : "flux";
@@ -36,7 +56,7 @@ export async function listLocalLoras(loraRoot: string, schema: Record<string, un
   try {
     const entries = await fs.readdir(directory, { withFileTypes: true });
     const loras = entries
-      .filter((entry) => entry.isFile() && [".safetensors", ".sft"].includes(path.extname(entry.name).toLowerCase()))
+      .filter((entry) => entry.isFile() && isLoraFilename(entry.name))
       .map((entry) => entry.name)
       .sort((left, right) => left.localeCompare(right));
     return { supported: true, loras };

@@ -43,6 +43,7 @@ yarn-error.log*
 /data/temp/*
 /data/model-selections.json
 /data/app-preferences.json
+/data/lora-classifier-overrides.json
 !/data/uploads/.gitkeep
 !/data/outputs/.gitkeep
 !/data/thumbnails/.gitkeep

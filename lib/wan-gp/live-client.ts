@@ -2,13 +2,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { z } from "zod";
 import type { WanGpClient } from "./client";
-import { availabilitySchema, modelListSchema, parseLoraCatalog, parseWanGpJobSnapshot, parseWanGpStructuredContent, parseWanGpTextContent, record } from "./schemas";
+import { availabilitySchema, modelListSchema, parseLoraCatalogResponse, parseWanGpJobSnapshot, parseWanGpStructuredContent, parseWanGpTextContent, record } from "./schemas";
 import { listLocalLoras } from "./local-lora-catalog";
 
 const allowedTools = new Set([
   "wangp_list_models", "wangp_get_model_metadata", "wangp_get_model_availability", "wangp_get_default_settings",
   "wangp_get_model_schema", "wangp_generate", "wangp_get_job", "wangp_cancel_job",
-  "wangp_list_loras", "wangp_get_loras",
+  "wangp_list_lora_presets", "wangp_list_loras", "wangp_get_loras",
 ]);
 
 const toolResultSchema = z.object({
@@ -37,7 +37,8 @@ export class LiveWanGpClient implements WanGpClient {
   async getDefaultSettings(modelType: string) { return record(await this.call("wangp_get_default_settings", { model_type: modelType })); }
   async getModelSchema(modelType: string) { return record(await this.call("wangp_get_model_schema", { model_type: modelType })); }
   async listLoras(modelType: string) {
-    const toolName = ["wangp_list_loras", "wangp_get_loras"].find((candidate) => this.toolNames?.has(candidate)) ?? await this.findTool(["wangp_list_loras", "wangp_get_loras"]);
+    const candidates = ["wangp_list_lora_presets", "wangp_list_loras", "wangp_get_loras"];
+    const toolName = candidates.find((candidate) => this.toolNames?.has(candidate)) ?? await this.findTool(candidates);
     if (!toolName) {
       if (!this.loraRoot) return { supported: false, loras: [], reason: "WanGP does not expose LoRA discovery and WANGP_LORA_ROOT is not configured." };
       const metadata = record(await this.call("wangp_get_model_metadata", { model_type: modelType }));
@@ -48,7 +49,7 @@ export class LiveWanGpClient implements WanGpClient {
       const reason = "reason" in result && typeof result.reason === "string" ? result.reason : "The selected WanGP model does not support LoRAs.";
       return { supported: false, loras: [], reason };
     }
-    return { supported: true, loras: parseLoraCatalog(result) };
+    return parseLoraCatalogResponse(result, modelType);
   }
   async generate(modelType: string, settings: Record<string, unknown>) {
     const result = record(await this.call("wangp_generate", { source: { ...settings, model_type: modelType }, wait: false }));

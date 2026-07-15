@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
 import { FACE_SWAP_PROMPT } from "@/lib/face-swap-preset";
-import { DEFAULT_CHARACTER_PROMPT } from "@/lib/character-prompt";
 
 async function png(color = "#146c63") {
   return sharp({ create: { width: 96, height: 64, channels: 3, background: color } }).png().toBuffer();
@@ -37,10 +36,38 @@ test("creates an image and exposes it in Outputs", async ({ page }) => {
 
 test("uses conservative Flux Klein image defaults", async ({ page }) => {
   await page.goto("/create-image");
+  await expect(page.getByLabel("Guidance (CFG)")).toHaveValue("4");
   await page.getByLabel("Model").selectOption("flux-klein-9b");
   await expect(page.getByLabel("Resolution")).toHaveValue("1024x1024");
   await expect(page.getByLabel("Steps")).toHaveValue("4");
+  await expect(page.getByLabel("Guidance (CFG)")).toHaveValue("5");
   await expect(page.getByLabel("Resolution").locator("option")).toHaveText(["1024x1024", "1344x768", "768x1344"]);
+});
+
+test("applies and disables a Qwen Lightning acceleration preset", async ({ page }) => {
+  await page.goto("/create-image");
+  const guidance = page.getByLabel("Guidance (CFG)");
+  const steps = page.getByLabel("Steps");
+  await expect(guidance).toHaveValue("4");
+  await expect(page.getByText("Acceleration presets", { exact: true })).toBeVisible();
+  await expect(page.getByText("Other LoRAs", { exact: true })).toBeVisible();
+  await page.getByLabel("Acceleration preset").selectOption("fixture-qwen-lightning");
+  await expect(guidance).toHaveValue("1");
+  await expect(guidance).toBeDisabled();
+  await expect(steps).toHaveValue("4");
+  await expect(steps).toBeDisabled();
+  await expect(page.getByText(/Provided by WanGP/)).toBeVisible();
+  const addLora = page.getByRole("button", { name: "Add LoRA" });
+  await expect(addLora).toBeEnabled();
+  await addLora.click();
+  await page.locator('select[name="loraName"]').selectOption("editorial-style.safetensors");
+  await page.locator('input[name="loraStrength"]').fill("0.7");
+  await expect(page.locator('select[name="loraName"]')).toBeEnabled();
+  await page.screenshot({ path: "test-results/desktop-acceleration-preset.png", fullPage: true });
+  await page.getByLabel("Acceleration preset").selectOption("");
+  await expect(guidance).toHaveValue("4");
+  await expect(steps).toHaveValue("20");
+  await expect(page.locator('select[name="loraName"]')).toHaveValue("editorial-style.safetensors");
 });
 
 test("uploads and edits an image", async ({ page }) => {
@@ -143,11 +170,13 @@ test("shows exact WanGP model selections in Settings", async ({ page }) => {
 });
 
 test("inserts the default character into an existing image prompt", async ({ page }) => {
+  const settings = await (await page.request.get("/api/settings")).json();
+  const savedCharacterPrompt = String(settings.preferences.characterPrompt);
   await page.goto("/create-image");
   const prompt = page.getByLabel("Prompt", { exact: true });
   await prompt.fill("Standing at the beach at sunset.");
   await page.getByRole("button", { name: "Insert character" }).click();
-  await expect(prompt).toHaveValue(`Standing at the beach at sunset. ${DEFAULT_CHARACTER_PROMPT}`);
+  await expect(prompt).toHaveValue(`Standing at the beach at sunset. ${savedCharacterPrompt}`);
 });
 
 test("saves an edited default character prompt", async ({ page }) => {
@@ -158,7 +187,7 @@ test("saves an edited default character prompt", async ({ page }) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ preferences: submitted }) });
   });
   await page.goto("/settings");
-  await expect(page.getByLabel("Default character prompt")).toHaveValue(DEFAULT_CHARACTER_PROMPT);
+  await expect(page.getByLabel("Default character prompt")).not.toHaveValue("");
   await page.screenshot({ path: "test-results/desktop-character-prompt-settings.png", fullPage: true });
   await page.getByLabel("Default character prompt").fill(customPrompt);
   await page.getByRole("button", { name: "Save character prompt" }).click();

@@ -2,13 +2,14 @@
 
 import { Sparkles, UserRoundPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { insertCharacterPrompt } from "@/lib/character-prompt";
 import { DEFAULT_NEGATIVE_PROMPT } from "@/lib/requests";
-import type { LoraCatalog } from "@/lib/types";
+import type { LoraAccelerationPreset, LoraCatalog } from "@/lib/types";
+import { hasGuidanceOneMarker } from "@/lib/wan-gp/image-guidance";
 import { LoraSelector, readLoraSelections } from "./lora-selector";
 
-type FormModel = { key: string; displayName: string; availability: string; reason?: string; resolutions: string[]; defaultResolution: string; defaultSteps: number; loraCatalog: LoraCatalog };
+type FormModel = { key: string; displayName: string; availability: string; reason?: string; resolutions: string[]; defaultResolution: string; defaultSteps: number; defaultGuidance: number; guidanceLocked: boolean; loraCatalog: LoraCatalog };
 
 export function ImageCreateForm({ models, defaultModel, characterPrompt }: { models: FormModel[]; defaultModel: string; characterPrompt: string }) {
   const router = useRouter();
@@ -16,6 +17,14 @@ export function ImageCreateForm({ models, defaultModel, characterPrompt }: { mod
   const [prompt, setPrompt] = useState("");
   const [modelKey, setModelKey] = useState(models.find((model) => model.key === defaultModel && model.availability === "available")?.key ?? models.find((model) => model.availability === "available")?.key ?? "");
   const selected = models.find((model) => model.key === modelKey);
+  const [guidanceScale, setGuidanceScale] = useState(selected?.defaultGuidance ?? 1);
+  const [steps, setSteps] = useState(selected?.defaultSteps ?? 20);
+  const [preset, setPreset] = useState<LoraAccelerationPreset>();
+  const previousRecipeValues = useRef({ steps: selected?.defaultSteps ?? 20, guidance: selected?.defaultGuidance ?? 1 });
+  const [selectedLoraNames, setSelectedLoraNames] = useState<string[]>([]);
+  const guidanceLocked = preset?.settings.guidanceScale !== undefined || selected?.guidanceLocked === true || (modelKey === "qwen-image" && hasGuidanceOneMarker(selectedLoraNames));
+  const effectiveGuidance = preset?.settings.guidanceScale ?? (guidanceLocked ? 1 : guidanceScale);
+  const handleLoraSelectionChange = useCallback((loras: { name: string }[]) => setSelectedLoraNames(loras.map((lora) => lora.name)), []);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -23,7 +32,7 @@ export function ImageCreateForm({ models, defaultModel, characterPrompt }: { mod
     <form className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]" onSubmit={async (event) => {
       event.preventDefault(); setError(""); setSubmitting(true);
       const data = new FormData(event.currentTarget);
-      const response = await fetch("/api/jobs/image-create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: data.get("prompt"), negativePrompt: data.get("negativePrompt"), modelKey, resolution: data.get("resolution") || undefined, count: Number(data.get("count")), steps: Number(data.get("steps")), seed: data.get("seed") ? Number(data.get("seed")) : undefined, loras: readLoraSelections(data), advanced: {} }) });
+      const response = await fetch("/api/jobs/image-create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: data.get("prompt"), negativePrompt: data.get("negativePrompt"), modelKey, resolution: data.get("resolution") || undefined, count: Number(data.get("count")), steps, guidanceScale: effectiveGuidance, loraPresetId: data.get("loraPresetId") || undefined, seed: data.get("seed") ? Number(data.get("seed")) : undefined, loras: readLoraSelections(data), advanced: {} }) });
       const result = await response.json(); setSubmitting(false);
       if (!response.ok) { setError(result.error ?? "Generation could not be started."); return; }
       router.push(`/jobs?focus=${result.job.id}`);
@@ -42,12 +51,14 @@ export function ImageCreateForm({ models, defaultModel, characterPrompt }: { mod
         {error && <p role="alert" className="mt-3 text-sm font-semibold text-[var(--accent)]">{error}</p>}
       </section>
       <aside className="space-y-5 border border-[var(--line)] bg-[var(--surface)] p-5">
-        <Field label="Model"><select value={modelKey} onChange={(event) => setModelKey(event.target.value)} required className="control"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available"}>{model.displayName}{model.availability !== "available" ? ` (${model.availability})` : ""}</option>)}</select></Field>
+        <Field label="Model"><select value={modelKey} onChange={(event) => { const next = models.find((model) => model.key === event.target.value); setModelKey(event.target.value); setGuidanceScale(next?.defaultGuidance ?? 1); setSteps(next?.defaultSteps ?? 20); setPreset(undefined); setSelectedLoraNames([]); }} required className="control"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available"}>{model.displayName}{model.availability !== "available" ? ` (${model.availability})` : ""}</option>)}</select></Field>
         {selected?.reason && <p className="text-xs leading-5 text-[var(--accent)]">{selected.reason}</p>}
         <Field label="Resolution"><select name="resolution" defaultValue={selected?.defaultResolution} key={modelKey} className="control">{(selected?.resolutions.length ? selected.resolutions : [selected?.defaultResolution ?? "1024x1024"]).map((resolution) => <option key={resolution}>{resolution}</option>)}</select></Field>
         <Field label="Outputs"><input className="control" name="count" type="number" min="1" max="4" defaultValue="1" /></Field>
-        <Field label="Steps"><input key={`steps-${modelKey}`} className="control" name="steps" type="number" min="1" max="200" defaultValue={selected?.defaultSteps ?? 20} required /></Field>
-        <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} />
+        <Field label="Steps"><input className="control" name="steps" type="number" min="1" max="200" value={preset?.settings.numInferenceSteps ?? steps} disabled={preset?.settings.numInferenceSteps !== undefined} onChange={(event) => setSteps(Number(event.target.value))} required /></Field>
+        <Field label="Guidance (CFG)"><input className="control" name="guidanceScale" type="number" min="0" max="30" step="0.1" value={effectiveGuidance} disabled={guidanceLocked} onChange={(event) => setGuidanceScale(Number(event.target.value))} required /></Field>
+        {guidanceLocked && <p className="-mt-3 text-[0.68rem] leading-4 text-[var(--muted)]">Fixed at 1 for Qwen Lightning or distilled inference.</p>}
+        <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} onSelectionChange={handleLoraSelectionChange} onPresetChange={(next) => { if (next) { previousRecipeValues.current = { steps, guidance: guidanceScale }; setPreset(next); } else { setPreset(undefined); setSteps(previousRecipeValues.current.steps); setGuidanceScale(previousRecipeValues.current.guidance); } }} />
         <details className="border-t border-[var(--line)] pt-4"><summary className="cursor-pointer text-sm font-bold">Advanced</summary><div className="mt-4"><Field label="Seed"><input className="control" name="seed" type="number" min="0" max="2147483647" placeholder="Random" /></Field></div></details>
         <button type="submit" disabled={submitting || !modelKey} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-5 font-bold text-white hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"><Sparkles aria-hidden="true" size={18} />{submitting ? "Submitting..." : "Generate image"}</button>
       </aside>

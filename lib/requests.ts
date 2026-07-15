@@ -13,6 +13,7 @@ const baseGenerationSchema = z.object({
   modelKey: z.string().min(1),
   resolution: z.string().regex(/^\d{2,5}x\d{2,5}$/).optional(),
   seed: z.number().int().min(0).max(2_147_483_647).optional(),
+  loraPresetId: z.string().trim().min(1).max(100).optional(),
   loras: z.array(loraSelectionSchema).max(8).default([]).superRefine((loras, context) => {
     const seen = new Set<string>();
     loras.forEach((lora, index) => {
@@ -28,6 +29,7 @@ export const imageCreateRequestSchema = baseGenerationSchema.extend({
   aspectRatio: z.string().max(20).optional(),
   count: z.number().int().min(1).max(4).default(1),
   steps: z.number().int().min(1).max(200).default(20),
+  guidanceScale: z.number().finite().min(0).max(30).optional(),
 });
 
 export type ImageCreateRequest = z.infer<typeof imageCreateRequestSchema>;

@@ -9,6 +9,8 @@ describe("generation request validation", () => {
     expect(imageCreateRequestSchema.parse({ ...base, steps: 200 }).steps).toBe(200);
     expect(() => imageCreateRequestSchema.parse({ ...base, steps: 0 })).toThrow();
     expect(() => imageCreateRequestSchema.parse({ ...base, steps: 201 })).toThrow();
+    expect(imageCreateRequestSchema.parse({ ...base, guidanceScale: 4 }).guidanceScale).toBe(4);
+    expect(() => imageCreateRequestSchema.parse({ ...base, guidanceScale: 31 })).toThrow();
   });
 
   it("defaults image editing to 20 steps", () => {

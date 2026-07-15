@@ -37,4 +37,10 @@ describe("image creation", () => {
     while (getJob(created.id)?.status !== "completed" && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
     expect(getJob(created.id)?.status).toBe("completed");
   }, 6000);
+
+  it("applies a server-owned acceleration preset over conflicting request settings", async () => {
+    const client = new FakeWanGpClient(); setWanGpClientForTests(client);
+    await createImage({ prompt: "Fast portrait", negativePrompt: "blurry", modelKey: "qwen-image", count: 1, steps: 30, guidanceScale: 7, loraPresetId: "fixture-qwen-lightning", loras: [{ name: "editorial-style.safetensors", strength: 0.65 }], advanced: {} });
+    expect(client.getLastSubmissionForTests()?.settings).toMatchObject({ activated_loras: ["Qwen-Lightning-4steps.safetensors", "editorial-style.safetensors"], loras_multipliers: "1 0.65", num_inference_steps: 4, guidance_scale: 1, sample_solver: "lightning" });
+  });
 });
