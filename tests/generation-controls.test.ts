@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getGenerationControls, validateGenerationControls } from "@/lib/wan-gp/generation-controls";
 import { getImageFallbackResolutions, QWEN_IMAGE_1080P_CHOICES } from "@/lib/wan-gp/image-presets";
+import { getVideoFallbackResolutions, LTX2_1080P_CHOICES } from "@/lib/wan-gp/video-presets";
 
 describe("WanGP generation controls", () => {
   const schema = {
@@ -43,6 +44,13 @@ describe("WanGP generation controls", () => {
     const controls = getGenerationControls({}, { resolution: "1920x1088" }, { workflow: "image", fallbackResolutions: getImageFallbackResolutions("qwen-image"), fallbackResolution: "1920x1088" });
     expect(controls.resolutions).toEqual(QWEN_IMAGE_1080P_CHOICES);
     expect(controls.defaultResolution).toBe("1920x1088");
+  });
+
+  it("uses WanGP's aligned 1080p choices as the LTX-2 fallback without changing its default", () => {
+    const fallback = getVideoFallbackResolutions("ltx-2", "1280x704");
+    const controls = getGenerationControls({}, { resolution: "1280x704" }, { workflow: "video", fallbackResolutions: fallback, fallbackResolution: "1280x704" });
+    expect(controls.resolutions).toEqual([{ label: "1280x704 (current default)", value: "1280x704" }, ...LTX2_1080P_CHOICES]);
+    expect(controls.defaultResolution).toBe("1280x704");
   });
 
   it("rejects values outside the selected model contract", () => {
