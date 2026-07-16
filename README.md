@@ -7,6 +7,7 @@ Powered by WanGP by DeepBeepMeep.
 ## Features
 
 - Create images with Qwen Image or Flux.2 Klein 9B.
+- Use model-discovered resolutions, step and guidance ranges, solvers, schedulers, FPS, and duration constraints across generation workflows.
 - Control image-generation Guidance (CFG); Qwen Lightning/distilled recipes enforce CFG 1.
 - Edit a source image with Qwen Image Edit or Flux.2 Klein.
 - Add separate reference images to Qwen edits.
@@ -14,7 +15,7 @@ Powered by WanGP by DeepBeepMeep.
 - Apply the exclusive Qwen Sharpen and Unblur preset using `Qwen-Image-Edit-Unblur-Upscale_20.safetensors` at strength 1.
 - Batch Face Swap or Sharpen and Unblur across up to 10 uploaded source images, creating one job per source with shared preset settings.
 - Generate LTX-2 videos from a required start image and optional end image.
-- Choose video duration from 1 to 20 seconds, with a 15-second default; the app converts it to WanGP's required aligned frame count.
+- Choose video duration within the selected model's discovered constraints; the app converts seconds to WanGP's required aligned frame count.
 - Adjust LTX start-image/source strength from 0 to 1 and use the model's discovered inference-step default.
 - Select multiple model-aligned LoRAs with individual strengths.
 - Select classifier-backed acceleration presets separately from character, style, motion, and other LoRAs.
@@ -77,6 +78,18 @@ When `WANGP_PROFILES_ROOT` and `WANGP_LORA_METADATA_ROOT` are omitted, the app d
 
 Restart the app, open Settings, and select **Refresh models**. Unmatched or unavailable allow-listed models remain disabled. WanGP field names are isolated under `lib/wan-gp/adapters`; verify those mappings against the installed WanGP schema.
 
+### Schema-driven generation controls
+
+Create Image, Edit Image, and Create Video derive supported resolutions, step and guidance bounds, solver choices, scheduler choices, FPS, and duration constraints from `wangp_get_model_schema` and `wangp_get_default_settings`.
+
+- Resolution, steps, guidance, and duration are displayed in the main generation settings rail.
+- FPS, solver, scheduler, and seed are displayed under **Advanced**.
+- Solver and scheduler selectors appear only when WanGP publishes concrete choices for the selected model.
+- Labeled WanGP choices retain their display label while submitting the corresponding setting value.
+- The server validates every submitted value against the same normalized model contract before calling `wangp_generate`.
+
+Older or partially serializable WanGP schemas fall back to the app's existing conservative ranges and selected-model defaults. A missing solver or scheduler catalog hides that selector rather than guessing unsupported values. Use **Refresh models** after changing models or WanGP configuration.
+
 ### LoRA discovery
 
 Easy Media Generator supports multiple model-aligned LoRAs with individual strengths. If WanGP exposes `wangp_list_lora_presets(model_type)`, `wangp_list_loras(model_type)`, or `wangp_get_loras(model_type)`, the app uses the available native tool. Otherwise it reads model-aligned filenames from `WANGP_LORA_ROOT` without changing WanGP source code. The fallback supports this app's Qwen Image, Flux.2 Klein, and LTX-2 families using WanGP's default LoRA subdirectories.
@@ -119,9 +132,10 @@ Job request snapshots and upload handles are stored in memory, so setting reuse 
 
 ### Video workflow controls
 
-- **Duration** defaults to 15 seconds. LTX video length is controlled through aligned `video_length` frames rather than WanGP's unrelated audio-only `duration_seconds` field.
+- **Duration** uses the selected model's discovered minimum, maximum, increment, and default, falling back to 1–20 seconds with a 15-second default. LTX video length is controlled through aligned `video_length` frames rather than WanGP's unrelated audio-only `duration_seconds` field.
+- **Frames per second** uses the discovered model range under **Advanced** and maps to WanGP's available `force_fps`, `fps`, or `frame_rate` setting.
 - **Start image / source strength** maps to WanGP `input_video_strength` and accepts values from 0 to 1. The installed LTX model currently defaults to 0.85.
-- **Steps** maps to WanGP `num_inference_steps` and remains available because WanGP uses it as the LTX sampling step count. The installed distilled model currently defaults to 8; a selected acceleration preset may override it.
+- **Steps** and **Guidance (CFG)** use discovered model bounds when published. Steps map to `num_inference_steps`; guidance maps to `guidance_scale` or `cfg_scale`.
 
 ### Local application settings
 

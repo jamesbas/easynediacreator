@@ -6,19 +6,15 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { DEFAULT_NEGATIVE_PROMPT, type VideoCreateRequest } from "@/lib/requests";
 import type { LoraCatalog } from "@/lib/types";
+import type { GenerationControls } from "@/lib/wan-gp/generation-controls";
 import { LoraSelector, readLoraSelections } from "./lora-selector";
 
 type FormModel = {
   key: string;
   displayName: string;
   availability: string;
-  resolutions: string[];
-  durations: number[];
-  defaultResolution: string;
-  defaultDuration: number;
-  defaultFps: number;
+  controls: GenerationControls;
   defaultSourceStrength: number;
-  defaultSteps: number;
   supportsEndFrame: boolean;
   loraCatalog: LoraCatalog;
 };
@@ -29,12 +25,18 @@ export function VideoCreateForm({ models, assets, defaultModel, initialStartId, 
   const router = useRouter();
   const reusableModel = models.find((model) => model.key === initialRequest?.modelKey && model.availability === "available");
   const [modelKey, setModelKey] = useState(reusableModel?.key ?? models.find((model) => model.key === defaultModel && model.availability === "available")?.key ?? models.find((model) => model.availability === "available")?.key ?? "");
+  const selected = models.find((model) => model.key === modelKey);
   const [start, setStart] = useState<PickedImage>({ uploadId: initialRequest?.startUploadId, assetId: initialRequest?.startAssetId ?? initialStartId });
   const [end, setEnd] = useState<PickedImage>({ uploadId: initialRequest?.endUploadId, assetId: initialRequest?.endAssetId });
   const [error, setError] = useState(initialRequest && !reusableModel ? "The saved model is no longer available. Choose another model before submitting." : "");
   const [submitting, setSubmitting] = useState(false);
-  const selected = models.find((model) => model.key === modelKey);
   const [sourceStrength, setSourceStrength] = useState(reusableModel ? initialRequest?.sourceStrength ?? reusableModel.defaultSourceStrength : selected?.defaultSourceStrength ?? 0.85);
+  const [durationSeconds, setDurationSeconds] = useState(reusableModel ? initialRequest?.durationSeconds ?? reusableModel.controls.duration?.defaultValue ?? 15 : selected?.controls.duration?.defaultValue ?? 15);
+  const [fps, setFps] = useState(reusableModel ? initialRequest?.fps ?? reusableModel.controls.fps?.defaultValue ?? 24 : selected?.controls.fps?.defaultValue ?? 24);
+  const [steps, setSteps] = useState(reusableModel ? initialRequest?.steps ?? reusableModel.controls.steps.defaultValue : selected?.controls.steps.defaultValue ?? 8);
+  const [guidanceScale, setGuidanceScale] = useState(reusableModel ? initialRequest?.guidanceScale ?? reusableModel.controls.guidance?.defaultValue : selected?.controls.guidance?.defaultValue);
+  const [sampleSolver, setSampleSolver] = useState(reusableModel ? initialRequest?.sampleSolver ?? reusableModel.controls.defaultSolver ?? "" : selected?.controls.defaultSolver ?? "");
+  const [scheduler, setScheduler] = useState(reusableModel ? initialRequest?.scheduler ?? reusableModel.controls.defaultScheduler ?? "" : selected?.controls.defaultScheduler ?? "");
   const [reuseSelections, setReuseSelections] = useState(Boolean(reusableModel));
 
   async function upload(file?: File) {
@@ -64,10 +66,13 @@ export function VideoCreateForm({ models, assets, defaultModel, initialStartId, 
           negativePrompt: data.get("negativePrompt"),
           modelKey,
           resolution: data.get("resolution") || undefined,
-          durationSeconds: Number(data.get("duration")),
-          fps: Number(data.get("fps")),
+          durationSeconds,
+          fps,
           sourceStrength: Number(data.get("sourceStrength")),
-          steps: Number(data.get("steps")),
+          steps,
+          guidanceScale,
+          sampleSolver: sampleSolver || undefined,
+          scheduler: scheduler || undefined,
           loraPresetId: data.get("loraPresetId") || undefined,
           seed: data.get("seed") ? Number(data.get("seed")) : undefined,
           loras: readLoraSelections(data),
@@ -95,13 +100,19 @@ export function VideoCreateForm({ models, assets, defaultModel, initialStartId, 
       </section>
     </div>
     <aside className="space-y-5 border border-[var(--line)] bg-[var(--surface)] p-5">
-      <Control label="LTX-2 model"><select value={modelKey} onChange={(event) => { const next = models.find((model) => model.key === event.target.value); setModelKey(event.target.value); setSourceStrength(next?.defaultSourceStrength ?? 0.85); setReuseSelections(false); }} className="control"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available"}>{model.displayName}</option>)}</select></Control>
-      <Control label="Duration"><select key={`duration-${modelKey}`} name="duration" defaultValue={reuseSelections ? initialRequest?.durationSeconds ?? selected?.defaultDuration ?? 15 : selected?.defaultDuration ?? 15} className="control">{(selected?.durations.length ? selected.durations : [15]).map((value) => <option key={value} value={value}>{value} seconds</option>)}</select></Control>
-      <Control label="Resolution"><select key={`resolution-${modelKey}`} name="resolution" defaultValue={reuseSelections ? initialRequest?.resolution ?? selected?.defaultResolution : selected?.defaultResolution} className="control">{(selected?.resolutions.length ? selected.resolutions : [selected?.defaultResolution ?? "1280x720"]).map((value) => <option key={value}>{value}</option>)}</select></Control>
+      <Control label="LTX-2 model"><select value={modelKey} onChange={(event) => { const next = models.find((model) => model.key === event.target.value); setModelKey(event.target.value); setSourceStrength(next?.defaultSourceStrength ?? 0.85); setDurationSeconds(next?.controls.duration?.defaultValue ?? 15); setFps(next?.controls.fps?.defaultValue ?? 24); setSteps(next?.controls.steps.defaultValue ?? 8); setGuidanceScale(next?.controls.guidance?.defaultValue); setSampleSolver(next?.controls.defaultSolver ?? ""); setScheduler(next?.controls.defaultScheduler ?? ""); setReuseSelections(false); }} className="control"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available"}>{model.displayName}</option>)}</select></Control>
+      <Control label="Duration"><input className="control" name="duration" type="number" min={selected?.controls.duration?.min ?? 1} max={selected?.controls.duration?.max ?? 20} step={selected?.controls.duration?.step ?? 1} value={durationSeconds} onChange={(event) => setDurationSeconds(Number(event.target.value))} required /></Control>
+      <Control label="Resolution"><select key={`resolution-${modelKey}`} name="resolution" defaultValue={reuseSelections ? initialRequest?.resolution ?? selected?.controls.defaultResolution : selected?.controls.defaultResolution} className="control">{(selected?.controls.resolutions ?? [{ label: "1280x720", value: "1280x720" }]).map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></Control>
       <label className="block"><span className="mb-2 flex items-center justify-between gap-3 text-sm font-bold"><span>Start image / source strength</span><output htmlFor="source-strength">{sourceStrength.toFixed(2)}</output></span><input id="source-strength" aria-label="Start image / source strength" className="w-full accent-[var(--teal)]" name="sourceStrength" type="range" min="0" max="1" step="0.05" value={sourceStrength} onChange={(event) => setSourceStrength(Number(event.target.value))} /></label>
-      <Control label="Steps"><input key={`steps-${modelKey}`} className="control" name="steps" type="number" min="1" max="200" defaultValue={reuseSelections ? initialRequest?.steps ?? selected?.defaultSteps ?? 8 : selected?.defaultSteps ?? 8} required /></Control>
+      <Control label="Steps"><input className="control" name="steps" type="number" min={selected?.controls.steps.min ?? 1} max={selected?.controls.steps.max ?? 200} step={selected?.controls.steps.step ?? 1} value={steps} onChange={(event) => setSteps(Number(event.target.value))} required /></Control>
+      {selected?.controls.guidance && guidanceScale !== undefined ? <Control label="Guidance (CFG)"><input className="control" name="guidanceScale" type="number" min={selected.controls.guidance.min} max={selected.controls.guidance.max} step={selected.controls.guidance.step} value={guidanceScale} onChange={(event) => setGuidanceScale(Number(event.target.value))} required /></Control> : null}
       <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} initialLoras={reuseSelections ? initialRequest?.loras : undefined} initialPresetId={reuseSelections ? initialRequest?.loraPresetId : undefined} />
-      <details className="border-t border-[var(--line)] pt-4"><summary className="cursor-pointer text-sm font-bold">Advanced</summary><div className="mt-4 space-y-4"><Control label="Frames per second"><input className="control" name="fps" type="number" min="1" max="120" defaultValue={initialRequest?.fps ?? selected?.defaultFps ?? 24} /></Control><Control label="Seed"><input className="control" name="seed" type="number" min="0" max="2147483647" placeholder="Random" defaultValue={initialRequest?.seed} /></Control></div></details>
+      <details className="border-t border-[var(--line)] pt-4"><summary className="cursor-pointer text-sm font-bold">Advanced</summary><div className="mt-4 space-y-4">
+        {selected?.controls.fps ? <Control label="Frames per second"><input className="control" name="fps" type="number" min={selected.controls.fps.min} max={selected.controls.fps.max} step={selected.controls.fps.step} value={fps} onChange={(event) => setFps(Number(event.target.value))} required /></Control> : null}
+        {selected?.controls.solvers.length ? <Control label="Solver"><select className="control" value={sampleSolver} onChange={(event) => setSampleSolver(event.target.value)}><option value="">Model default</option>{selected.controls.solvers.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></Control> : null}
+        {selected?.controls.schedulers.length ? <Control label="Scheduler"><select className="control" value={scheduler} onChange={(event) => setScheduler(event.target.value)}><option value="">Model default</option>{selected.controls.schedulers.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></Control> : null}
+        <Control label="Seed"><input className="control" name="seed" type="number" min="0" max="2147483647" placeholder="Random" defaultValue={initialRequest?.seed} /></Control>
+      </div></details>
       <button disabled={submitting || !modelKey || (!start.file && !start.uploadId && !start.assetId)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-5 font-bold text-white disabled:opacity-50"><Clapperboard size={18} />{submitting ? "Submitting..." : "Generate video"}</button>
     </aside>
     <style jsx>{`.control{width:100%;min-height:44px;border:1px solid #b8beb7;border-radius:6px;background:#fff;padding:0 12px}`}</style>

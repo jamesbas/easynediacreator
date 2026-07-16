@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import { buildLtx2VideoSettings } from "@/lib/wan-gp/adapters/ltx2-video";
 
 describe("LTX-2 settings", () => {
+  it("passes discovered solver and scheduler settings", () => {
+    const settings = buildLtx2VideoSettings(
+      { prompt: "Slow camera push", negativePrompt: "blurry", modelKey: "ltx-2", startAssetId: crypto.randomUUID(), durationSeconds: 5, sourceStrength: 0.85, steps: 8, sampleSolver: "euler", scheduler: "karras", loras: [], advanced: {} },
+      { prompt: "", negative_prompt: "", image_prompt_type: "", image_start: null, input_video_strength: 0.85, force_fps: 24, video_length: 121, num_inference_steps: 8, sample_solver: "distilled_8_steps", scheduler_type: "normal" },
+      { setting_values: { sample_solver: { choices: [["Distilled", "distilled_8_steps"], ["Euler", "euler"]] }, scheduler_type: { choices: [["Normal", "normal"], ["Karras", "karras"]] } } },
+      "ltx2_22B",
+      "C:\\input\\start.png",
+    );
+
+    expect(settings).toMatchObject({ sample_solver: "euler", scheduler_type: "karras" });
+  });
+
   it("maps optional end frames only inside the adapter", () => {
     const settings = buildLtx2VideoSettings({ prompt: "Slow camera push", negativePrompt: "blurry", modelKey: "ltx-2", startAssetId: crypto.randomUUID(), endAssetId: crypto.randomUUID(), durationSeconds: 5, sourceStrength: 0.85, steps: 20, loras: [], advanced: {} }, { fps: 24 }, {}, "ltx2_fixture", "C:\\input\\start.png", "C:\\input\\end.png");
     expect(settings).toMatchObject({ image_start: "C:\\input\\start.png", image_end: "C:\\input\\end.png", video_length: 121, duration_seconds: 0, fps: 24 });

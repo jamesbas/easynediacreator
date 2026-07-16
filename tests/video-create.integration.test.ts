@@ -23,4 +23,13 @@ describe("video creation", () => {
     expect(getOutput(job?.outputIds?.[0] ?? "")).toMatchObject({ type: "video", workflowType: "video-create", filename: expect.stringMatching(/\.mp4$/) });
     expect(client.getLastSubmissionForTests()?.settings).toMatchObject({ video_length: 361, input_video_strength: 0.6, num_inference_steps: 8, negative_prompt: "blurry, jittery frames", activated_loras: ["cinematic-motion.safetensors"], loras_multipliers: "0.8" });
   }, 10000);
+
+  it("rejects video values outside the selected model constraints", async () => {
+    const buffer = await sharp({ create: { width: 64, height: 36, channels: 3, background: "#dda928" } }).png().toBuffer();
+    const upload = await storeImageUpload(buffer, await validateImageBuffer(buffer));
+    const base = { startUploadId: upload.id, prompt: "Invalid controls", negativePrompt: "blurry", modelKey: "ltx-2", durationSeconds: 15, sourceStrength: 0.6, steps: 8, loras: [], advanced: {} };
+    await expect(createVideo({ ...base, durationSeconds: 21 })).rejects.toThrow(/Duration/);
+    await expect(createVideo({ ...base, fps: 61 })).rejects.toThrow(/FPS/);
+    await expect(createVideo({ ...base, sampleSolver: "unknown" })).rejects.toThrow(/Solver/);
+  });
 });

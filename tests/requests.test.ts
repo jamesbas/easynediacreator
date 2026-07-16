@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_NEGATIVE_PROMPT, imageCreateRequestSchema, imageEditRequestSchema, videoCreateRequestSchema } from "@/lib/requests";
 
 describe("generation request validation", () => {
-  it("defaults image generation to 20 steps and enforces the supported range", () => {
+  it("defaults image generation and applies broad transport safety limits", () => {
     const base = { prompt: "test", modelKey: "qwen-image", count: 1 };
     expect(imageCreateRequestSchema.parse(base)).toMatchObject({ steps: 20, negativePrompt: DEFAULT_NEGATIVE_PROMPT });
     expect(imageCreateRequestSchema.parse({ ...base, steps: 1 }).steps).toBe(1);
-    expect(imageCreateRequestSchema.parse({ ...base, steps: 200 }).steps).toBe(200);
+    expect(imageCreateRequestSchema.parse({ ...base, steps: 1000 }).steps).toBe(1000);
     expect(() => imageCreateRequestSchema.parse({ ...base, steps: 0 })).toThrow();
-    expect(() => imageCreateRequestSchema.parse({ ...base, steps: 201 })).toThrow();
+    expect(() => imageCreateRequestSchema.parse({ ...base, steps: 1001 })).toThrow();
     expect(imageCreateRequestSchema.parse({ ...base, guidanceScale: 4 }).guidanceScale).toBe(4);
-    expect(() => imageCreateRequestSchema.parse({ ...base, guidanceScale: 31 })).toThrow();
+    expect(() => imageCreateRequestSchema.parse({ ...base, guidanceScale: 101 })).toThrow();
   });
 
   it("defaults image editing to 20 steps", () => {
@@ -39,11 +39,12 @@ describe("generation request validation", () => {
     expect(() => imageCreateRequestSchema.parse({ prompt: "test", modelKey: "qwen-image", count: 1, loras: [{ name: "..\\unsafe.safetensors", strength: 1 }] })).toThrow(/available filename/);
   });
 
-  it("accepts 20 seconds but rejects longer video requests", () => {
+  it("accepts model-specific video values within broad transport limits", () => {
     const base = { prompt: "test", modelKey: "ltx-2", startUploadId: crypto.randomUUID() };
     expect(videoCreateRequestSchema.parse(base)).toMatchObject({ durationSeconds: 15, sourceStrength: 0.85, negativePrompt: DEFAULT_NEGATIVE_PROMPT });
     expect(videoCreateRequestSchema.parse({ ...base, durationSeconds: 20, sourceStrength: 0 })).toMatchObject({ durationSeconds: 20, sourceStrength: 0 });
-    expect(() => videoCreateRequestSchema.parse({ ...base, durationSeconds: 21 })).toThrow();
+    expect(videoCreateRequestSchema.parse({ ...base, durationSeconds: 21 }).durationSeconds).toBe(21);
+    expect(() => videoCreateRequestSchema.parse({ ...base, durationSeconds: 3601 })).toThrow();
     expect(() => videoCreateRequestSchema.parse({ ...base, sourceStrength: 1.1 })).toThrow();
   });
 });

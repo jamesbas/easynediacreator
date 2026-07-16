@@ -43,4 +43,13 @@ describe("image creation", () => {
     await createImage({ prompt: "Fast portrait", negativePrompt: "blurry", modelKey: "qwen-image", count: 1, steps: 30, guidanceScale: 7, loraPresetId: "fixture-qwen-lightning", loras: [{ name: "editorial-style.safetensors", strength: 0.65 }], advanced: {} });
     expect(client.getLastSubmissionForTests()?.settings).toMatchObject({ activated_loras: ["Qwen-Lightning-4steps.safetensors", "editorial-style.safetensors"], loras_multipliers: "1 0.65", num_inference_steps: 4, guidance_scale: 1, sample_solver: "lightning" });
   });
+
+  it("rejects controls outside the selected model schema", async () => {
+    const base = { prompt: "Invalid controls", negativePrompt: "blurry", modelKey: "qwen-image", count: 1, steps: 20, loras: [], advanced: {} };
+    await expect(createImage({ ...base, resolution: "640x480" })).rejects.toThrow(/Resolution/);
+    await expect(createImage({ ...base, steps: 201 })).rejects.toThrow(/Steps/);
+    await expect(createImage({ ...base, guidanceScale: 31 })).rejects.toThrow(/Guidance/);
+    await expect(createImage({ ...base, sampleSolver: "unknown" })).rejects.toThrow(/Solver/);
+    await expect(createImage({ ...base, scheduler: "unknown" })).rejects.toThrow(/Scheduler/);
+  });
 });

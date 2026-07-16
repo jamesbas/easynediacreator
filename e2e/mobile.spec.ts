@@ -16,7 +16,7 @@ test("keeps the creation workflow and bottom navigation usable on phone viewport
   await page.getByRole("button", { name: "Insert character" }).click();
   await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(savedCharacterPrompt);
   await page.getByLabel("Acceleration preset").selectOption("fixture-qwen-lightning");
-  await expect(page.getByLabel("Steps")).toHaveValue("4");
+  await expect(page.getByRole("spinbutton", { name: "Steps", exact: true })).toHaveValue("4");
   await expect(page.getByLabel("Guidance (CFG)")).toHaveValue("1");
   const action = page.getByRole("button", { name: "Generate image" });
   await action.scrollIntoViewIfNeeded();
@@ -43,7 +43,7 @@ test("keeps LTX video controls usable on phone viewports", async ({ page }) => {
   await page.goto("/create-video");
   await expect(page.getByLabel("Duration")).toHaveValue("15");
   await expect(page.getByRole("slider", { name: "Start image / source strength" })).toHaveValue("0.85");
-  await expect(page.getByLabel("Steps")).toHaveValue("8");
+  await expect(page.getByRole("spinbutton", { name: "Steps", exact: true })).toHaveValue("8");
   const action = page.getByRole("button", { name: "Generate video" });
   await action.scrollIntoViewIfNeeded();
   await expect(action).toBeInViewport();

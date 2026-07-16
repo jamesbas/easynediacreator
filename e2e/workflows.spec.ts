@@ -11,7 +11,7 @@ test("creates an image and exposes it in Outputs", async ({ page }) => {
   const prompt = "A bright red observatory above a quiet forest";
   await page.goto("/create-image");
   await page.getByLabel("Prompt", { exact: true }).fill(prompt);
-  await expect(page.getByLabel("Steps")).toHaveValue("20");
+  await expect(page.getByRole("spinbutton", { name: "Steps", exact: true })).toHaveValue("20");
   await expect(page.getByLabel("Negative prompt")).toHaveValue(/deformed anatomy/);
   await page.getByRole("button", { name: "Add LoRA" }).click();
   await page.getByRole("button", { name: "Add LoRA" }).click();
@@ -47,17 +47,20 @@ test("creates an image and exposes it in Outputs", async ({ page }) => {
 test("uses conservative Flux Klein image defaults", async ({ page }) => {
   await page.goto("/create-image");
   await expect(page.getByLabel("Guidance (CFG)")).toHaveValue("4");
-  await page.getByLabel("Model").selectOption("flux-klein-9b");
+  await page.getByRole("combobox", { name: "Model", exact: true }).selectOption("flux-klein-9b");
   await expect(page.getByLabel("Resolution")).toHaveValue("1024x1024");
-  await expect(page.getByLabel("Steps")).toHaveValue("4");
+  await expect(page.getByRole("spinbutton", { name: "Steps", exact: true })).toHaveValue("4");
   await expect(page.getByLabel("Guidance (CFG)")).toHaveValue("5");
-  await expect(page.getByLabel("Resolution").locator("option")).toHaveText(["1024x1024", "1344x768", "768x1344"]);
+  await expect(page.getByLabel("Resolution").locator("option")).toHaveText(["Square", "Landscape", "Portrait"]);
+  await page.getByText("Advanced", { exact: true }).click();
+  await expect(page.getByLabel("Solver")).toHaveValue("euler");
+  await expect(page.getByLabel("Scheduler")).toHaveValue("normal");
 });
 
 test("applies and disables a Qwen Lightning acceleration preset", async ({ page }) => {
   await page.goto("/create-image");
   const guidance = page.getByLabel("Guidance (CFG)");
-  const steps = page.getByLabel("Steps");
+  const steps = page.getByRole("spinbutton", { name: "Steps", exact: true });
   await expect(guidance).toHaveValue("4");
   await expect(page.getByText("Acceleration presets", { exact: true })).toBeVisible();
   await expect(page.getByText("Other LoRAs", { exact: true })).toBeVisible();
@@ -85,8 +88,11 @@ test("uploads and edits an image", async ({ page }) => {
   await page.goto("/edit-image");
   await page.locator('input[type="file"]').first().setInputFiles({ name: "source.png", mimeType: "image/png", buffer: await png() });
   await page.getByLabel("Edit prompt").fill(prompt);
-  await expect(page.getByLabel("Steps")).toHaveValue("20");
+  await expect(page.getByRole("spinbutton", { name: "Steps", exact: true })).toHaveValue("20");
   await expect(page.getByLabel("Negative prompt")).toHaveValue(/deformed anatomy/);
+  await page.getByText("Advanced", { exact: true }).click();
+  await page.getByLabel("Solver").selectOption("dpm++");
+  await page.getByLabel("Scheduler").selectOption("karras");
   await page.getByRole("button", { name: "Add LoRA" }).click();
   await page.locator('input[name="loraStrength"]').fill("0.9");
   await page.getByRole("button", { name: "Edit image" }).click();
@@ -98,6 +104,9 @@ test("uploads and edits an image", async ({ page }) => {
   await expect(page.getByLabel("Edit prompt")).toHaveValue(prompt);
   await expect(page.getByAltText("Selected source preview")).toBeVisible();
   await expect(page.locator('input[name="loraStrength"]')).toHaveValue("0.9");
+  await page.getByText("Advanced", { exact: true }).click();
+  await expect(page.getByLabel("Solver")).toHaveValue("dpm++");
+  await expect(page.getByLabel("Scheduler")).toHaveValue("karras");
 });
 
 test("configures and submits a face-swap edit", async ({ page }) => {
@@ -123,8 +132,8 @@ test("configures and submits a face-swap edit", async ({ page }) => {
   await fileInputs.nth(0).setInputFiles({ name: "source-two.png", mimeType: "image/png", buffer: await png("#dda928") });
   await expect(page.getByLabel("Edit prompt")).toHaveValue(FACE_SWAP_PROMPT);
   await expect(page.getByLabel("Edit prompt")).toHaveAttribute("readonly", "");
-  await expect(page.getByLabel("Model")).toHaveValue("qwen-image-edit");
-  await expect(page.getByLabel("Steps")).toHaveValue("4");
+  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toHaveValue("qwen-image-edit");
+  await expect(page.getByRole("spinbutton", { name: "Steps", exact: true })).toHaveValue("4");
   await expect(page.getByText("Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors")).toBeVisible();
   await expect(page.getByText("bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors")).toBeVisible();
   await expect(page.getByText("0.8", { exact: true })).toBeVisible();
@@ -144,18 +153,22 @@ test("configures and submits a face-swap edit", async ({ page }) => {
 test("generates and serves an LTX-2 video", async ({ page }) => {
   const prompt = "A slow cinematic push toward the horizon";
   await page.goto("/create-video");
-  await expect(page.locator('select[name="duration"] option')).toHaveCount(20);
   await expect(page.getByLabel("Duration")).toHaveValue("15");
+  await expect(page.getByLabel("Duration")).toHaveAttribute("min", "1");
+  await expect(page.getByLabel("Duration")).toHaveAttribute("max", "20");
   const sourceStrength = page.getByRole("slider", { name: "Start image / source strength" });
   await expect(sourceStrength).toHaveValue("0.85");
-  await expect(page.getByLabel("Steps")).toHaveValue("8");
+  await expect(page.getByRole("spinbutton", { name: "Steps", exact: true })).toHaveValue("8");
   await expect(page.getByLabel("Negative prompt")).toHaveValue(/deformed anatomy/);
-  await page.getByLabel("Duration").selectOption("6");
+  await page.getByLabel("Duration").fill("6");
   await sourceStrength.focus();
   await sourceStrength.press("Home");
   for (let step = 0; step < 8; step += 1) await sourceStrength.press("ArrowRight");
   await expect(sourceStrength).toHaveValue("0.4");
-  await page.getByLabel("Steps").fill("9");
+  await page.getByRole("spinbutton", { name: "Steps", exact: true }).fill("9");
+  await page.getByText("Advanced", { exact: true }).click();
+  await page.getByLabel("Solver").selectOption("euler");
+  await page.getByLabel("Scheduler").selectOption("karras");
   await page.getByRole("group", { name: "Start image *" }).locator('input[type="file"]').setInputFiles({ name: "start.png", mimeType: "image/png", buffer: await png("#dda928") });
   await page.getByLabel("Video prompt").fill(prompt);
   await page.getByRole("button", { name: "Add LoRA" }).click();
@@ -164,7 +177,7 @@ test("generates and serves an LTX-2 video", async ({ page }) => {
   const submittedRequest = page.waitForRequest((request) => request.url().endsWith("/api/jobs/video-create") && request.method() === "POST");
   await page.getByRole("button", { name: "Generate video" }).click();
   const submitted = (await submittedRequest).postDataJSON();
-  expect(submitted).toMatchObject({ durationSeconds: 6, sourceStrength: 0.4, steps: 9 });
+  expect(submitted).toMatchObject({ durationSeconds: 6, sourceStrength: 0.4, steps: 9, fps: 24, guidanceScale: 3, sampleSolver: "euler", scheduler: "karras" });
   const completedJob = page.locator("article").filter({ hasText: prompt });
   await expect(completedJob.getByText("completed", { exact: true })).toBeVisible();
   await completedJob.getByRole("link", { name: "Reuse settings" }).click();
@@ -172,7 +185,10 @@ test("generates and serves an LTX-2 video", async ({ page }) => {
   await expect(page.getByLabel("Video prompt")).toHaveValue(prompt);
   await expect(page.getByLabel("Duration")).toHaveValue("6");
   await expect(page.getByRole("slider", { name: "Start image / source strength" })).toHaveValue("0.4");
-  await expect(page.getByLabel("Steps")).toHaveValue("9");
+  await expect(page.getByRole("spinbutton", { name: "Steps", exact: true })).toHaveValue("9");
+  await page.getByText("Advanced", { exact: true }).click();
+  await expect(page.getByLabel("Solver")).toHaveValue("euler");
+  await expect(page.getByLabel("Scheduler")).toHaveValue("karras");
   await expect(page.getByAltText("Start image preview")).toBeVisible();
   await expect(page.locator('select[name="loraName"]')).toHaveValue("cinematic-motion.safetensors");
   await page.goto("/outputs");
@@ -262,10 +278,10 @@ test("configures and submits the exclusive Sharpen and Unblur preset", async ({ 
     { name: "soft-two.png", mimeType: "image/png", buffer: await png("#999999") },
   ]);
   await expect(page.getByRole("switch", { name: /Face swap/ })).not.toBeChecked();
-  await expect(page.getByLabel("Model")).toHaveValue("qwen-image-edit");
-  await expect(page.getByLabel("Model")).toBeDisabled();
-  await expect(page.getByLabel("Steps")).toHaveValue("20");
-  await expect(page.getByLabel("Steps")).toBeEnabled();
+  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toHaveValue("qwen-image-edit");
+  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toBeDisabled();
+  await expect(page.getByRole("spinbutton", { name: "Steps", exact: true })).toHaveValue("20");
+  await expect(page.getByRole("spinbutton", { name: "Steps", exact: true })).toBeEnabled();
   await expect(page.getByText(SHARPEN_UNBLUR_LORA.name, { exact: true })).toBeVisible();
   await expect(page.getByText("Sharpen and Unblur LoRA", { exact: true }).locator("..").getByText("1", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add LoRA" })).toHaveCount(0);

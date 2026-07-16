@@ -8,6 +8,8 @@ function knownKeys(schema: Record<string, unknown>, defaults: Record<string, unk
   }
   if (Array.isArray(schema.fields)) for (const field of schema.fields) if (field && typeof field === "object") { const name = "name" in field ? field.name : "key" in field ? field.key : undefined; if (typeof name === "string") keys.add(name); }
   const metadata = schema.metadata && typeof schema.metadata === "object" && !Array.isArray(schema.metadata) ? schema.metadata as Record<string, unknown> : {};
+  const modelDefinition = schema.model_def && typeof schema.model_def === "object" && !Array.isArray(schema.model_def) ? schema.model_def as Record<string, unknown> : {};
+  if (Array.isArray(modelDefinition.sample_solvers)) keys.add("sample_solver");
   for (const settingValues of [schema.setting_values, metadata.setting_values]) {
     if (settingValues && typeof settingValues === "object" && !Array.isArray(settingValues)) Object.keys(settingValues).forEach((key) => keys.add(key));
   }
@@ -45,6 +47,11 @@ export function applyVideoDuration(target: Record<string, unknown>, schema: Reco
   setDiscoveredSetting(target, schema, defaults, modelType, ["duration_seconds"], 0);
 }
 
+export function applySamplingSettings(target: Record<string, unknown>, schema: Record<string, unknown>, defaults: Record<string, unknown>, modelType: string, request: { sampleSolver?: string; scheduler?: string }) {
+  setDiscoveredSetting(target, schema, defaults, modelType, ["sample_solver"], request.sampleSolver, request.sampleSolver !== undefined);
+  setDiscoveredSetting(target, schema, defaults, modelType, ["scheduler", "scheduler_type", "scheduler_name"], request.scheduler, request.scheduler !== undefined);
+}
+
 export function commonImageSettings(request: ImageCreateRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string) {
   if (Object.keys(request.advanced).length) throw new Error("The selected model does not allow these advanced settings.");
   const settings = { ...defaults };
@@ -61,6 +68,7 @@ export function commonImageSettings(request: ImageCreateRequest, defaults: Recor
   setDiscoveredSetting(settings, schema, defaults, modelType, ["seed"], request.seed);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["guidance_scale"], request.guidanceScale, request.guidanceScale !== undefined);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["num_inference_steps", "steps"], request.steps, true);
+  applySamplingSettings(settings, schema, defaults, modelType, request);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["count", "num_outputs", "batch_size"], request.count === 1 ? undefined : request.count);
   applyLoraSettings(settings, schema, defaults, modelType, request.loras);
   return settings;

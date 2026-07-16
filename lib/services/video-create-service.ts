@@ -4,6 +4,7 @@ import { getModels } from "@/lib/runtime/model-cache";
 import { getOutput } from "@/lib/runtime/output-registry";
 import { getUpload } from "@/lib/uploads/storage";
 import { buildLtx2VideoSettings } from "@/lib/wan-gp/adapters/ltx2-video";
+import { getGenerationControls, validateGenerationControls } from "@/lib/wan-gp/generation-controls";
 import { enqueueJob } from "./job-runner";
 import { applyLoraAccelerationPreset, resolveLoraPreset, validateModelLoras } from "./lora-service";
 
@@ -21,6 +22,8 @@ export async function createVideo(request: VideoCreateRequest) {
   if ((request.endUploadId || request.endAssetId) && !endPath) throw new Error("End image could not be found.");
   if (endPath && !model.capabilities.includes("end-frame")) throw new Error("End frame is not supported by this LTX-2 configuration.");
   const normalizedRequest = { ...request, loras: validateModelLoras(request.loras, model.loraCatalog) };
+  const controls = getGenerationControls(model.schema, model.defaults, { workflow: "video", fallbackResolutions: [], fallbackResolution: typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1280x720" });
+  validateGenerationControls(normalizedRequest, controls);
   const preset = resolveLoraPreset(request.loraPresetId, normalizedRequest.loras, model.loraCatalog, model.modelType, "video-create");
   const settings = buildLtx2VideoSettings(normalizedRequest, model.defaults, model.schema, model.modelType, startPath, endPath);
   applyLoraAccelerationPreset(settings, preset, normalizedRequest.loras);

@@ -6,6 +6,7 @@ import { getAppPreferences } from "@/lib/runtime/app-preferences";
 import { getJob } from "@/lib/runtime/job-registry";
 import { FLUX_KLEIN_IMAGE_PRESET } from "@/lib/wan-gp/image-presets";
 import { hasGuidanceOneMarker } from "@/lib/wan-gp/image-guidance";
+import { getGenerationControls } from "@/lib/wan-gp/generation-controls";
 
 export const dynamic = "force-dynamic";
 export default async function CreateImagePage({ searchParams }: { searchParams: Promise<{ fromJob?: string }> }) {
@@ -14,16 +15,14 @@ export default async function CreateImagePage({ searchParams }: { searchParams: 
   try { discovered = await getModels(); } catch {}
   const models = discovered.filter((model) => model.workflowType === "image-create").map((model) => {
     const fluxPreset = model.key === "flux-klein-9b" ? FLUX_KLEIN_IMAGE_PRESET : undefined;
-    const discoveredResolutions = Array.isArray(model.schema.resolutions) ? model.schema.resolutions.filter((value): value is string => typeof value === "string") : [];
+    const controlDefaults = fluxPreset ? { ...model.defaults, resolution: fluxPreset.defaultResolution, num_inference_steps: fluxPreset.defaultSteps } : model.defaults;
+    const controls = getGenerationControls(model.schema, controlDefaults, { workflow: "image", fallbackResolutions: fluxPreset ? [...fluxPreset.resolutions] : [], fallbackResolution: fluxPreset?.defaultResolution ?? (typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1024x1024") });
     return {
       key: model.key,
       displayName: model.displayName,
       availability: model.availability,
       reason: model.reason,
-      resolutions: fluxPreset ? [...fluxPreset.resolutions] : discoveredResolutions,
-      defaultResolution: fluxPreset?.defaultResolution ?? (typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1024x1024"),
-      defaultSteps: fluxPreset?.defaultSteps ?? (typeof model.defaults.num_inference_steps === "number" ? model.defaults.num_inference_steps : 20),
-      defaultGuidance: typeof model.defaults.guidance_scale === "number" ? model.defaults.guidance_scale : 1,
+      controls,
       guidanceLocked: model.key === "qwen-image" && hasGuidanceOneMarker(model.modelType, model.displayName, model.defaults.type, model.defaults.sample_solver, model.defaults.activated_loras),
       loraCatalog: model.loraCatalog,
     };

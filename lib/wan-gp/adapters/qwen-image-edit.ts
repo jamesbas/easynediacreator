@@ -1,6 +1,6 @@
 import type { ImageEditRequest } from "@/lib/requests";
 import { FACE_SWAP_LORAS, FACE_SWAP_PROMPT, FACE_SWAP_STEPS } from "@/lib/face-swap-preset";
-import { applyLoraSettings, setDiscoveredSetting } from "../settings-builder";
+import { applyLoraSettings, applySamplingSettings, setDiscoveredSetting } from "../settings-builder";
 
 export function buildQwenImageEditSettings(request: ImageEditRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string, sourcePath: string, referencePaths: string[] = []) {
   if (Object.keys(request.advanced).length) throw new Error("The selected model does not allow these advanced settings.");
@@ -20,6 +20,8 @@ export function buildQwenImageEditSettings(request: ImageEditRequest, defaults: 
     setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], "KI", true);
   }
   setDiscoveredSetting(settings, schema, defaults, modelType, ["num_inference_steps", "steps"], request.faceSwap ? FACE_SWAP_STEPS : request.steps, true);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["guidance_scale", "cfg_scale"], request.guidanceScale, request.guidanceScale !== undefined);
+  applySamplingSettings(settings, schema, defaults, modelType, request);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["resolution", "size"], request.resolution);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["seed"], request.seed);
   if (request.faceSwap) {

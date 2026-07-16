@@ -13,6 +13,8 @@ const baseGenerationSchema = z.object({
   modelKey: z.string().min(1),
   resolution: z.string().regex(/^\d{2,5}x\d{2,5}$/).optional(),
   seed: z.number().int().min(0).max(2_147_483_647).optional(),
+  sampleSolver: z.string().trim().min(1).max(100).optional(),
+  scheduler: z.string().trim().min(1).max(100).optional(),
   loraPresetId: z.string().trim().min(1).max(100).optional(),
   loras: z.array(loraSelectionSchema).max(8).default([]).superRefine((loras, context) => {
     const seen = new Set<string>();
@@ -28,8 +30,8 @@ const baseGenerationSchema = z.object({
 export const imageCreateRequestSchema = baseGenerationSchema.extend({
   aspectRatio: z.string().max(20).optional(),
   count: z.number().int().min(1).max(4).default(1),
-  steps: z.number().int().min(1).max(200).default(20),
-  guidanceScale: z.number().finite().min(0).max(30).optional(),
+  steps: z.number().int().min(1).max(1000).default(20),
+  guidanceScale: z.number().finite().min(0).max(100).optional(),
 });
 
 export type ImageCreateRequest = z.infer<typeof imageCreateRequestSchema>;
@@ -42,6 +44,7 @@ export const imageEditRequestSchema = baseGenerationSchema.extend({
   faceSwap: z.boolean().default(false),
   sharpenUnblur: z.boolean().default(false),
   steps: z.number().int().min(1).max(200).default(20),
+  guidanceScale: z.number().finite().min(0).max(100).optional(),
 }).superRefine((value, context) => {
   if (Boolean(value.sourceUploadId) === Boolean(value.sourceAssetId)) context.addIssue({ code: "custom", message: "Choose exactly one source image." });
   const referenceCount = value.referenceUploadIds.length + value.referenceAssetIds.length;
@@ -60,7 +63,7 @@ export type ImageEditRequest = z.infer<typeof imageEditRequestSchema>;
 export const videoCreateRequestSchema = baseGenerationSchema.extend({
   startUploadId: z.string().uuid().optional(), startAssetId: z.string().uuid().optional(),
   endUploadId: z.string().uuid().optional(), endAssetId: z.string().uuid().optional(),
-  durationSeconds: z.number().int().min(1).max(20).default(15), fps: z.number().int().min(1).max(120).optional(), sourceStrength: z.number().finite().min(0).max(1).default(0.85), steps: z.number().int().min(1).max(200).optional(),
+  durationSeconds: z.number().int().min(1).max(3600).default(15), fps: z.number().int().min(1).max(240).optional(), sourceStrength: z.number().finite().min(0).max(1).default(0.85), steps: z.number().int().min(1).max(1000).optional(), guidanceScale: z.number().finite().min(0).max(100).optional(),
 }).refine((value) => Boolean(value.startUploadId) !== Boolean(value.startAssetId), { message: "Choose exactly one start image." })
   .refine((value) => !(value.endUploadId && value.endAssetId), { message: "Choose only one end image." });
 

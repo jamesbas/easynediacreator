@@ -16,12 +16,21 @@ describe("image editing", () => {
     const client = new FakeWanGpClient(); setWanGpClientForTests(client);
     const buffer = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#e3482d" } }).png().toBuffer();
     const upload = await storeImageUpload(buffer, await validateImageBuffer(buffer));
-    const created = await editImage({ sourceUploadId: upload.id, referenceUploadIds: [], referenceAssetIds: [], faceSwap: false, sharpenUnblur: false, prompt: "Turn the sky teal", negativePrompt: "blurry, malformed hands", modelKey: "qwen-image-edit", steps: 20, loras: [], advanced: {} });
+    const created = await editImage({ sourceUploadId: upload.id, referenceUploadIds: [], referenceAssetIds: [], faceSwap: false, sharpenUnblur: false, prompt: "Turn the sky teal", negativePrompt: "blurry, malformed hands", modelKey: "qwen-image-edit", steps: 20, guidanceScale: 3, sampleSolver: "dpm++", scheduler: "karras", loras: [], advanced: {} });
     const deadline = Date.now() + 4000;
     while (getJob(created.id)?.status !== "completed" && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
     expect(getJob(created.id)).toMatchObject({ status: "completed", workflowType: "image-edit" });
-    expect(client.getLastSubmissionForTests()?.settings).toMatchObject({ negative_prompt: "blurry, malformed hands", num_inference_steps: 20, video_prompt_type: "KI", image_refs: [upload.path] });
+    expect(client.getLastSubmissionForTests()?.settings).toMatchObject({ negative_prompt: "blurry, malformed hands", num_inference_steps: 20, guidance_scale: 3, sample_solver: "dpm++", scheduler_type: "karras", video_prompt_type: "KI", image_refs: [upload.path] });
   }, 5000);
+
+  it("rejects edit controls outside the selected model schema", async () => {
+    const buffer = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#e3482d" } }).png().toBuffer();
+    const upload = await storeImageUpload(buffer, await validateImageBuffer(buffer));
+    const base = { sourceUploadId: upload.id, referenceUploadIds: [], referenceAssetIds: [], faceSwap: false, sharpenUnblur: false, prompt: "Invalid controls", negativePrompt: "blurry", modelKey: "qwen-image-edit", steps: 20, loras: [], advanced: {} };
+    await expect(editImage({ ...base, resolution: "640x480" })).rejects.toThrow(/Resolution/);
+    await expect(editImage({ ...base, steps: 201 })).rejects.toThrow(/Steps/);
+    await expect(editImage({ ...base, sampleSolver: "unknown" })).rejects.toThrow(/Solver/);
+  });
 
   it("submits a Qwen face swap with separate base and reference images", async () => {
     const client = new FakeWanGpClient(); setWanGpClientForTests(client);

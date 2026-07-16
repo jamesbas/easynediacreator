@@ -28,4 +28,16 @@ describe("image-create adapters", () => {
     expect(standard.guidance_scale).toBe(4);
     expect(lightning).toMatchObject({ guidance_scale: 1, activated_loras: ["Qwen-Lightning-4steps.safetensors"] });
   });
+
+  it("passes discovered solver and scheduler settings", () => {
+    const defaults = { image_mode: 1, image_prompt_type: "", video_prompt_type: "", prompt: "", negative_prompt: "", guidance_scale: 4, num_inference_steps: 20, sample_solver: "euler", scheduler_type: "normal" };
+    const settings = buildQwenImageSettings(
+      { prompt: "Portrait", negativePrompt: "blurry", modelKey: "qwen-image", count: 1, steps: 20, guidanceScale: 4, sampleSolver: "dpm++", scheduler: "karras", loras: [], advanced: {} },
+      defaults,
+      { setting_values: { sample_solver: { choices: [["Euler", "euler"], ["DPM++", "dpm++"]] }, scheduler_type: { choices: [["Normal", "normal"], ["Karras", "karras"]] } } },
+      "qwen_image_2512_20B",
+    );
+
+    expect(settings).toMatchObject({ sample_solver: "dpm++", scheduler_type: "karras" });
+  });
 });

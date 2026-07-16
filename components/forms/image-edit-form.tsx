@@ -8,9 +8,10 @@ import { FACE_SWAP_LORAS, FACE_SWAP_PROMPT, FACE_SWAP_STEPS } from "@/lib/face-s
 import { DEFAULT_NEGATIVE_PROMPT, type ImageEditRequest } from "@/lib/requests";
 import { SHARPEN_UNBLUR_LORA, SHARPEN_UNBLUR_PROMPT } from "@/lib/sharpen-unblur-preset";
 import type { LoraAccelerationPreset, LoraCatalog } from "@/lib/types";
+import type { GenerationControls } from "@/lib/wan-gp/generation-controls";
 import { LoraSelector, readLoraSelections } from "./lora-selector";
 
-type FormModel = { key: string; displayName: string; availability: string; resolutions: string[]; defaultResolution: string; loraCatalog: LoraCatalog };
+type FormModel = { key: string; displayName: string; availability: string; controls: GenerationControls; loraCatalog: LoraCatalog };
 type AssetOption = { id: string; filename: string; contentUrl: string };
 type ReferenceFile = { id: string; file: File; preview: string };
 const MAX_BATCH_SOURCES = 10;
@@ -37,22 +38,38 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
   const [referenceAssetIds, setReferenceAssetIds] = useState<string[]>(initialRequest?.referenceAssetIds ?? []);
   const reusableModel = models.find((model) => model.key === initialRequest?.modelKey && model.availability === "available");
   const [modelKey, setModelKey] = useState(reusableModel?.key ?? models.find((model) => model.key === defaultModel && model.availability === "available")?.key ?? models.find((model) => model.availability === "available")?.key ?? "");
+  const selected = models.find((model) => model.key === modelKey);
   const [faceSwap, setFaceSwap] = useState(Boolean(reusableModel && initialRequest?.faceSwap));
   const [sharpenUnblur, setSharpenUnblur] = useState(Boolean(reusableModel && initialRequest?.sharpenUnblur));
   const [prompt, setPrompt] = useState(initialRequest?.prompt ?? "");
-  const [steps, setSteps] = useState(initialRequest?.steps ?? 20);
+  const [steps, setSteps] = useState(reusableModel ? initialRequest?.steps ?? reusableModel.controls.steps.defaultValue : selected?.controls.steps.defaultValue ?? 20);
+  const [guidanceScale, setGuidanceScale] = useState(reusableModel ? initialRequest?.guidanceScale ?? reusableModel.controls.guidance?.defaultValue ?? 1 : selected?.controls.guidance?.defaultValue ?? 1);
+  const [sampleSolver, setSampleSolver] = useState(reusableModel ? initialRequest?.sampleSolver ?? reusableModel.controls.defaultSolver ?? "" : selected?.controls.defaultSolver ?? "");
+  const [scheduler, setScheduler] = useState(reusableModel ? initialRequest?.scheduler ?? reusableModel.controls.defaultScheduler ?? "" : selected?.controls.defaultScheduler ?? "");
   const [accelerationPreset, setAccelerationPreset] = useState<LoraAccelerationPreset | undefined>(() => reusableModel?.loraCatalog.accelerationPresets?.find((candidate) => candidate.id === initialRequest?.loraPresetId));
-  const previousAccelerationSteps = useRef(initialRequest?.steps ?? 20);
+  const previousAccelerationValues = useRef({ steps: initialRequest?.steps ?? 20, guidance: initialRequest?.guidanceScale ?? reusableModel?.controls.guidance?.defaultValue ?? 1 });
   const [reuseSelections, setReuseSelections] = useState(Boolean(reusableModel));
   const [error, setError] = useState(initialRequest && !reusableModel ? "The saved model is no longer available. Choose another model before submitting." : "");
   const [submitting, setSubmitting] = useState(false);
   const [submissionProgress, setSubmissionProgress] = useState<{ current: number; total: number }>();
-  const selected = models.find((model) => model.key === modelKey);
   const qwenModel = models.find((model) => model.key === "qwen-image-edit" && model.availability === "available");
   const sharpenUnblurAvailable = Boolean(qwenModel?.loraCatalog.loras.some((name) => name.toLocaleLowerCase() === SHARPEN_UNBLUR_LORA.name.toLocaleLowerCase()));
   const referenceCount = referenceFiles.length + referenceUploadIds.length + referenceAssetIds.length;
   const batchPreset = faceSwap || sharpenUnblur;
   const sourceCount = sourceFiles.length || (sourceUploadId || sourceAssetId ? 1 : 0);
+  const effectiveGuidance = faceSwap ? 1 : accelerationPreset?.settings.guidanceScale ?? guidanceScale;
+  const effectiveSolver = faceSwap ? "lightning" : accelerationPreset?.settings.sampleSolver ?? sampleSolver;
+
+  const selectModel = useCallback((nextKey: string) => {
+    const next = models.find((model) => model.key === nextKey);
+    setModelKey(nextKey);
+    setSteps(next?.controls.steps.defaultValue ?? 20);
+    setGuidanceScale(next?.controls.guidance?.defaultValue ?? 1);
+    setSampleSolver(next?.controls.defaultSolver ?? "");
+    setScheduler(next?.controls.defaultScheduler ?? "");
+    setAccelerationPreset(undefined);
+    setReuseSelections(false);
+  }, [models]);
 
   const createPreview = useCallback((next: File) => {
     const url = URL.createObjectURL(next);
@@ -120,8 +137,8 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
     const accepted = files.filter((item) => item.type.startsWith("image/")).slice(0, remaining);
     if (accepted.length !== files.length) setError("Only the first 8 valid image references were added.");
     setReferenceFiles((current) => [...current, ...accepted.map((item) => ({ id: crypto.randomUUID(), file: item, preview: createPreview(item) }))]);
-    if (accepted.length && qwenModel) setModelKey(qwenModel.key);
-  }, [createPreview, qwenModel, referenceCount]);
+    if (accepted.length && qwenModel) selectModel(qwenModel.key);
+  }, [createPreview, qwenModel, referenceCount, selectModel]);
 
   const removeReferenceFile = (id: string) => {
     setReferenceFiles((current) => current.filter((item) => {
@@ -142,9 +159,9 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
       }
       setSharpenUnblur(false);
       setAccelerationPreset(undefined);
+      if (qwenModel) selectModel(qwenModel.key);
       setPrompt(FACE_SWAP_PROMPT);
       setSteps(FACE_SWAP_STEPS);
-      if (qwenModel) setModelKey(qwenModel.key);
     } else {
       limitSourceFilesToOne();
       setPrompt(previousPrompt.current);
@@ -157,13 +174,13 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
     setSharpenUnblur(enabled);
     if (enabled) {
       if (!faceSwap) previousPrompt.current = prompt;
+      if (qwenModel) selectModel(qwenModel.key);
       if (faceSwap) {
         setFaceSwap(false);
         setSteps(previousSteps.current);
       }
       setAccelerationPreset(undefined);
       setPrompt(SHARPEN_UNBLUR_PROMPT);
-      if (qwenModel) setModelKey(qwenModel.key);
     } else {
       limitSourceFilesToOne();
       setPrompt(previousPrompt.current);
@@ -219,6 +236,9 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
             modelKey,
             resolution: data.get("resolution") || undefined,
             steps,
+            guidanceScale: effectiveGuidance,
+            sampleSolver: sampleSolver || undefined,
+            scheduler: scheduler || undefined,
             seed: data.get("seed") ? Number(data.get("seed")) : undefined,
             loraPresetId: faceSwap || sharpenUnblur ? undefined : data.get("loraPresetId") || undefined,
             loras: faceSwap || sharpenUnblur ? [] : readLoraSelections(data),
@@ -257,7 +277,7 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
           <input className="sr-only" type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => { addReferenceFiles([...(event.target.files ?? [])]); event.target.value = ""; }} />
         </label>
         {(referenceUploadIds.length > 0 || referenceFiles.length > 0) && <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{referenceUploadIds.map((uploadId, index) => <div key={uploadId} className="relative aspect-square overflow-hidden border border-[var(--line)] bg-[#f6f4ee]"><Image src={`/api/uploads/${uploadId}/content`} alt={`Saved reference ${index + 1}`} fill sizes="(max-width: 640px) 50vw, 220px" className="object-cover" unoptimized /><button type="button" onClick={() => setReferenceUploadIds((current) => current.filter((id) => id !== uploadId))} title="Remove reference" aria-label={`Remove saved reference ${index + 1}`} className="absolute right-2 top-2 grid size-9 place-items-center rounded-md bg-white text-[var(--foreground)] shadow-sm"><Trash2 size={16} /></button></div>)}{referenceFiles.map((reference, index) => <div key={reference.id} className="relative aspect-square overflow-hidden border border-[var(--line)] bg-[#f6f4ee]"><Image src={reference.preview} alt={`Reference ${referenceUploadIds.length + index + 1}`} fill sizes="(max-width: 640px) 50vw, 220px" className="object-cover" unoptimized /><button type="button" onClick={() => removeReferenceFile(reference.id)} title="Remove reference" aria-label={`Remove reference ${referenceUploadIds.length + index + 1}`} className="absolute right-2 top-2 grid size-9 place-items-center rounded-md bg-white text-[var(--foreground)] shadow-sm"><Trash2 size={16} /></button></div>)}</div>}
-        {assets.length > 0 && <fieldset className="mt-4"><legend className="text-sm font-bold">Or use image outputs</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{assets.map((asset) => { const checked = referenceAssetIds.includes(asset.id); return <label key={asset.id} className="flex min-w-0 items-center gap-3 border border-[var(--line)] bg-white p-2 text-xs"><input type="checkbox" checked={checked} disabled={!checked && referenceCount >= 8} onChange={(event) => { setReferenceAssetIds((current) => event.target.checked ? [...current, asset.id] : current.filter((id) => id !== asset.id)); if (event.target.checked && qwenModel) setModelKey(qwenModel.key); }} /><span className="relative size-10 shrink-0 overflow-hidden bg-[#f6f4ee]"><Image src={asset.contentUrl} alt="" fill sizes="40px" className="object-cover" unoptimized /></span><span className="truncate">{asset.filename}</span></label>; })}</div></fieldset>}
+        {assets.length > 0 && <fieldset className="mt-4"><legend className="text-sm font-bold">Or use image outputs</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{assets.map((asset) => { const checked = referenceAssetIds.includes(asset.id); return <label key={asset.id} className="flex min-w-0 items-center gap-3 border border-[var(--line)] bg-white p-2 text-xs"><input type="checkbox" checked={checked} disabled={!checked && referenceCount >= 8} onChange={(event) => { setReferenceAssetIds((current) => event.target.checked ? [...current, asset.id] : current.filter((id) => id !== asset.id)); if (event.target.checked && qwenModel) selectModel(qwenModel.key); }} /><span className="relative size-10 shrink-0 overflow-hidden bg-[#f6f4ee]"><Image src={asset.contentUrl} alt="" fill sizes="40px" className="object-cover" unoptimized /></span><span className="truncate">{asset.filename}</span></label>; })}</div></fieldset>}
       </section>
 
       <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
@@ -286,11 +306,16 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
           </span>
         </label>
       </div>
-      <label className="block text-sm font-bold">Model<select value={modelKey} disabled={faceSwap || sharpenUnblur || referenceCount > 0} onChange={(event) => { setModelKey(event.target.value); setReuseSelections(false); }} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available" || (referenceCount > 0 && model.key !== "qwen-image-edit")}>{model.displayName}</option>)}</select></label>
-      <label className="block text-sm font-bold">Resolution<select name="resolution" key={modelKey} defaultValue={reuseSelections ? initialRequest?.resolution ?? selected?.defaultResolution : selected?.defaultResolution} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3">{(selected?.resolutions.length ? selected.resolutions : [selected?.defaultResolution ?? "1024x1024"]).map((value) => <option key={value}>{value}</option>)}</select></label>
-      <label className="block text-sm font-bold">Steps<input name="steps" type="number" min="1" max="200" value={accelerationPreset?.settings.numInferenceSteps ?? steps} disabled={faceSwap || accelerationPreset?.settings.numInferenceSteps !== undefined} onChange={(event) => setSteps(Number(event.target.value))} required className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]" /></label>
-      {faceSwap ? <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">Face-swap LoRAs</p><div className="mt-3 space-y-2">{FACE_SWAP_LORAS.map((lora) => <div key={lora.name} className="grid grid-cols-[minmax(0,1fr)_42px] gap-2 text-xs"><span className="truncate" title={lora.name}>{lora.name.split("/").at(-1)}</span><strong className="text-right">{lora.strength}</strong></div>)}</div></div> : sharpenUnblur ? <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">Sharpen and Unblur LoRA</p><div className="mt-3 grid grid-cols-[minmax(0,1fr)_42px] gap-2 text-xs"><span className="truncate" title={SHARPEN_UNBLUR_LORA.name}>{SHARPEN_UNBLUR_LORA.name}</span><strong className="text-right">{SHARPEN_UNBLUR_LORA.strength}</strong></div><p className="mt-2 text-[0.68rem] leading-4 text-[var(--muted)]">Other LoRAs are disabled for this preset.</p></div> : <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} initialLoras={reuseSelections ? initialRequest?.loras : undefined} initialPresetId={reuseSelections ? initialRequest?.loraPresetId : undefined} onPresetChange={(next) => { if (next) { previousAccelerationSteps.current = steps; setAccelerationPreset(next); } else { setAccelerationPreset(undefined); setSteps(previousAccelerationSteps.current); } }} />}
-      <details className="border-t border-[var(--line)] pt-4"><summary className="cursor-pointer text-sm font-bold">Advanced</summary><label className="mt-4 block text-sm font-bold">Seed<input name="seed" type="number" min="0" max="2147483647" placeholder="Random" defaultValue={initialRequest?.seed} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3" /></label></details>
+      <label className="block text-sm font-bold">Model<select value={modelKey} disabled={faceSwap || sharpenUnblur || referenceCount > 0} onChange={(event) => selectModel(event.target.value)} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available" || (referenceCount > 0 && model.key !== "qwen-image-edit")}>{model.displayName}</option>)}</select></label>
+      <label className="block text-sm font-bold">Resolution<select name="resolution" key={modelKey} defaultValue={reuseSelections ? initialRequest?.resolution ?? selected?.controls.defaultResolution : selected?.controls.defaultResolution} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3">{(selected?.controls.resolutions ?? [{ label: "1024x1024", value: "1024x1024" }]).map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></label>
+      <label className="block text-sm font-bold">Steps<input name="steps" type="number" min={selected?.controls.steps.min ?? 1} max={selected?.controls.steps.max ?? 200} step={selected?.controls.steps.step ?? 1} value={accelerationPreset?.settings.numInferenceSteps ?? steps} disabled={faceSwap || accelerationPreset?.settings.numInferenceSteps !== undefined} onChange={(event) => setSteps(Number(event.target.value))} required className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]" /></label>
+      {selected?.controls.guidance && <label className="block text-sm font-bold">Guidance (CFG)<input name="guidanceScale" type="number" min={selected.controls.guidance.min} max={selected.controls.guidance.max} step={selected.controls.guidance.step} value={effectiveGuidance} disabled={faceSwap || accelerationPreset?.settings.guidanceScale !== undefined} onChange={(event) => setGuidanceScale(Number(event.target.value))} required className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]" /></label>}
+      {faceSwap ? <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">Face-swap LoRAs</p><div className="mt-3 space-y-2">{FACE_SWAP_LORAS.map((lora) => <div key={lora.name} className="grid grid-cols-[minmax(0,1fr)_42px] gap-2 text-xs"><span className="truncate" title={lora.name}>{lora.name.split("/").at(-1)}</span><strong className="text-right">{lora.strength}</strong></div>)}</div></div> : sharpenUnblur ? <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">Sharpen and Unblur LoRA</p><div className="mt-3 grid grid-cols-[minmax(0,1fr)_42px] gap-2 text-xs"><span className="truncate" title={SHARPEN_UNBLUR_LORA.name}>{SHARPEN_UNBLUR_LORA.name}</span><strong className="text-right">{SHARPEN_UNBLUR_LORA.strength}</strong></div><p className="mt-2 text-[0.68rem] leading-4 text-[var(--muted)]">Other LoRAs are disabled for this preset.</p></div> : <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} initialLoras={reuseSelections ? initialRequest?.loras : undefined} initialPresetId={reuseSelections ? initialRequest?.loraPresetId : undefined} onPresetChange={(next) => { if (next) { previousAccelerationValues.current = { steps, guidance: guidanceScale }; setAccelerationPreset(next); } else { setAccelerationPreset(undefined); setSteps(previousAccelerationValues.current.steps); setGuidanceScale(previousAccelerationValues.current.guidance); } }} />}
+      <details className="border-t border-[var(--line)] pt-4"><summary className="cursor-pointer text-sm font-bold">Advanced</summary><div className="mt-4 space-y-4">
+        {selected?.controls.solvers.length ? <label className="block text-sm font-bold">Solver<select className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]" value={effectiveSolver} disabled={faceSwap || accelerationPreset?.settings.sampleSolver !== undefined} onChange={(event) => setSampleSolver(event.target.value)}><option value="">Model default</option>{faceSwap && !selected.controls.solvers.some((choice) => choice.value === "lightning") && <option value="lightning">Lightning</option>}{selected.controls.solvers.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></label> : null}
+        {selected?.controls.schedulers.length ? <label className="block text-sm font-bold">Scheduler<select className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3" value={scheduler} onChange={(event) => setScheduler(event.target.value)}><option value="">Model default</option>{selected.controls.schedulers.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></label> : null}
+        <label className="block text-sm font-bold">Seed<input name="seed" type="number" min="0" max="2147483647" placeholder="Random" defaultValue={initialRequest?.seed} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3" /></label>
+      </div></details>
       <button disabled={submitting || !modelKey || !sourceCount || (faceSwap && referenceCount !== 1)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-5 font-bold text-white disabled:opacity-50"><Paintbrush size={18} />{submitting ? submissionProgress && submissionProgress.total > 1 ? `Submitting ${submissionProgress.current} of ${submissionProgress.total}...` : "Submitting..." : faceSwap ? sourceCount > 1 ? `Start ${sourceCount} face swaps` : "Swap face" : sharpenUnblur ? sourceCount > 1 ? `Sharpen ${sourceCount} images` : "Sharpen image" : "Edit image"}</button>
       <p className="flex gap-2 text-xs leading-5 text-[var(--muted)]"><Upload size={15} className="mt-0.5 shrink-0" />Images remain local and are sent to your configured WanGP server.</p>
     </aside>

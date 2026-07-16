@@ -21,8 +21,30 @@ export class FakeWanGpClient implements WanGpClient {
   async listModels(output?: "image" | "video") { return fakeModels.filter((model) => !output || model.output === output); }
   async getModelMetadata(modelType: string) { const model = this.requireModel(modelType); return { ...model, capabilities: model.output === "video" ? ["start-frame", "end-frame"] : [] }; }
   async getModelAvailability(modelType: string) { this.requireModel(modelType); return { status: "available" as const }; }
-  async getDefaultSettings(modelType: string) { const model = this.requireModel(modelType); return model.output === "video" ? { resolution: "1280x720", durationSeconds: 5, fps: 24 } : { resolution: "1024x1024", count: 1, guidance_scale: model.family === "qwen" ? 4 : 5 }; }
-  async getModelSchema(modelType: string) { const model = this.requireModel(modelType); return model.output === "video" ? { resolutions: ["1280x720", "720x1280"], supportsEndFrame: true } : { resolutions: ["1024x1024", "1344x768", "768x1344"], maxOutputs: 4 }; }
+  async getDefaultSettings(modelType: string) {
+    const model = this.requireModel(modelType);
+    return model.output === "video"
+      ? { resolution: "1280x720", duration_seconds: 15, force_fps: 24, input_video_strength: 0.85, num_inference_steps: 8, guidance_scale: 3, sample_solver: "distilled_8_steps", scheduler_type: "normal" }
+      : { resolution: "1024x1024", count: 1, num_inference_steps: 20, guidance_scale: model.family === "qwen" ? 4 : 5, sample_solver: "euler", scheduler_type: "normal" };
+  }
+  async getModelSchema(modelType: string) {
+    const model = this.requireModel(modelType);
+    const resolutions = model.output === "video" ? [["Landscape 720p", "1280x720"], ["Portrait 720p", "720x1280"]] : [["Square", "1024x1024"], ["Landscape", "1344x768"], ["Portrait", "768x1344"]];
+    const sampleSolvers = model.output === "video" ? [["Distilled 8 Steps", "distilled_8_steps"], ["Euler", "euler"], ["HQ", "res2s"]] : [["Euler", "euler"], ["DPM++", "dpm++"], ["Lightning", "lightning"]];
+    return {
+      model_def: { resolutions, sample_solvers: sampleSolvers, ...(model.output === "video" ? { duration_slider: { min: 1, max: 20, increment: 1, default: 15 } } : {}) },
+      setting_values: { sample_solver: { choices: sampleSolvers }, scheduler_type: { choices: [["Normal", "normal"], ["Karras", "karras"]] } },
+      properties: {
+        num_inference_steps: { min: 1, max: 200, step: 1 },
+        guidance_scale: { min: 0, max: 30, step: 0.1 },
+        scheduler_type: { choices: [["Normal", "normal"], ["Karras", "karras"]] },
+        ...(model.output === "video" ? { force_fps: { min: 1, max: 60, step: 1 } } : {}),
+      },
+      supportsEndFrame: model.output === "video",
+      resolutions: resolutions.map(([, value]) => value),
+      maxOutputs: model.output === "image" ? 4 : undefined,
+    };
+  }
   async listLoras(modelType: string) {
     const model = this.requireModel(modelType);
     const loras = model.family === "ltx2" ? ["cinematic-motion.safetensors", "handheld-camera.sft"] : model.family === "flux" ? ["graphic-novel.safetensors", "soft-light.safetensors"] : ["editorial-style.safetensors", "product-photo.sft", "Qwen-Lightning-4steps.safetensors", "bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors", "Qwen-Image-Edit-Unblur-Upscale_20.safetensors"];
