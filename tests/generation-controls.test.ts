@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getGenerationControls, validateGenerationControls } from "@/lib/wan-gp/generation-controls";
+import { getImageFallbackResolutions, QWEN_IMAGE_1080P_CHOICES } from "@/lib/wan-gp/image-presets";
 
 describe("WanGP generation controls", () => {
   const schema = {
@@ -36,6 +37,12 @@ describe("WanGP generation controls", () => {
       solvers: [],
       schedulers: [],
     });
+  });
+
+  it("uses WanGP's 1080p choices as the Qwen image fallback", () => {
+    const controls = getGenerationControls({}, { resolution: "1920x1088" }, { workflow: "image", fallbackResolutions: getImageFallbackResolutions("qwen-image"), fallbackResolution: "1920x1088" });
+    expect(controls.resolutions).toEqual(QWEN_IMAGE_1080P_CHOICES);
+    expect(controls.defaultResolution).toBe("1920x1088");
   });
 
   it("rejects values outside the selected model contract", () => {

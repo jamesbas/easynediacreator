@@ -8,6 +8,7 @@ import { SHARPEN_UNBLUR_LORA } from "@/lib/sharpen-unblur-preset";
 import { buildFluxKleinEditSettings } from "@/lib/wan-gp/adapters/flux-klein-edit";
 import { buildQwenImageEditSettings } from "@/lib/wan-gp/adapters/qwen-image-edit";
 import { getGenerationControls, validateGenerationControls } from "@/lib/wan-gp/generation-controls";
+import { getImageFallbackResolutions } from "@/lib/wan-gp/image-presets";
 import { enqueueJob } from "./job-runner";
 import { applyLoraAccelerationPreset, resolveLoraPreset, validateModelLoras } from "./lora-service";
 
@@ -37,7 +38,7 @@ export async function editImage(request: ImageEditRequest) {
     if (!model.loraCatalog.supported || !model.loraCatalog.loras.some((name) => name.toLocaleLowerCase() === requiredLora)) throw new Error(`Sharpen and Unblur requires '${SHARPEN_UNBLUR_LORA.name}' in the Qwen LoRA catalog.`);
   }
   const normalizedRequest = { ...request, prompt: request.faceSwap ? FACE_SWAP_PROMPT : request.prompt, loras: validateModelLoras(request.loras, model.loraCatalog) };
-  const controls = getGenerationControls(model.schema, model.defaults, { workflow: "image", fallbackResolutions: [], fallbackResolution: typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1024x1024" });
+  const controls = getGenerationControls(model.schema, model.defaults, { workflow: "image", fallbackResolutions: model.key === "qwen-image-edit" ? getImageFallbackResolutions(model.key) : [], fallbackResolution: typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1024x1024" });
   validateGenerationControls(normalizedRequest, controls);
   const preset = resolveLoraPreset(request.loraPresetId, normalizedRequest.loras, model.loraCatalog, model.modelType, "image-edit");
   const referencePaths = references.filter((reference): reference is string => Boolean(reference));

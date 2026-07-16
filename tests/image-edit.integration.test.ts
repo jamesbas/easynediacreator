@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getJob, resetJobsForTests } from "@/lib/runtime/job-registry";
+import { clearModelCache } from "@/lib/runtime/model-cache";
 import { resetOutputsForTests } from "@/lib/runtime/output-registry";
 import { editImage } from "@/lib/services/image-edit-service";
 import { resetUploadsForTests, storeImageUpload } from "@/lib/uploads/storage";
@@ -11,7 +12,7 @@ import { FACE_SWAP_LORAS, FACE_SWAP_PROMPT } from "@/lib/face-swap-preset";
 import { SHARPEN_UNBLUR_LORA } from "@/lib/sharpen-unblur-preset";
 
 describe("image editing", () => {
-  beforeEach(() => { resetJobsForTests(); resetOutputsForTests(); resetUploadsForTests(); setWanGpClientForTests(new FakeWanGpClient()); });
+  beforeEach(() => { resetJobsForTests(); resetOutputsForTests(); resetUploadsForTests(); clearModelCache(); setWanGpClientForTests(new FakeWanGpClient()); });
   it("edits a validated uploaded image through the GPU queue", async () => {
     const client = new FakeWanGpClient(); setWanGpClientForTests(client);
     const buffer = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#e3482d" } }).png().toBuffer();
@@ -32,6 +33,28 @@ describe("image editing", () => {
     await expect(editImage({ ...base, sampleSolver: "unknown" })).rejects.toThrow(/Solver/);
   });
 
+  it("accepts a Qwen edit 1080p fallback when MCP omits resolution choices", async () => {
+    class QwenEditResolutionFallbackClient extends FakeWanGpClient {
+      override async getModelSchema(modelType: string) {
+        const schema = await super.getModelSchema(modelType);
+        if (modelType !== "qwen_image_edit_fixture") return schema;
+        const modelDefinition = { ...schema.model_def as Record<string, unknown> };
+        delete modelDefinition.resolutions;
+        const fallbackSchema: Record<string, unknown> = { ...schema, model_def: modelDefinition };
+        delete fallbackSchema.resolutions;
+        return fallbackSchema;
+      }
+    }
+    const client = new QwenEditResolutionFallbackClient();
+    setWanGpClientForTests(client);
+    const buffer = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#e3482d" } }).png().toBuffer();
+    const upload = await storeImageUpload(buffer, await validateImageBuffer(buffer));
+    await editImage({ sourceUploadId: upload.id, referenceUploadIds: [], referenceAssetIds: [], faceSwap: false, sharpenUnblur: false, prompt: "Make it vertical", negativePrompt: "blurry", modelKey: "qwen-image-edit", resolution: "1088x1920", steps: 20, loras: [], advanced: {} });
+    const deadline = Date.now() + 1000;
+    while (!client.getLastSubmissionForTests() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(client.getLastSubmissionForTests()?.settings.resolution).toBe("1088x1920");
+  });
+
   it("submits a Qwen face swap with separate base and reference images", async () => {
     const client = new FakeWanGpClient(); setWanGpClientForTests(client);
     const baseBuffer = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#e3482d" } }).png().toBuffer();
@@ -39,6 +62,8 @@ describe("image editing", () => {
     const source = await storeImageUpload(baseBuffer, await validateImageBuffer(baseBuffer));
     const reference = await storeImageUpload(referenceBuffer, await validateImageBuffer(referenceBuffer));
     await editImage({ sourceUploadId: source.id, referenceUploadIds: [reference.id], referenceAssetIds: [], faceSwap: true, sharpenUnblur: false, prompt: "replaced server-side", negativePrompt: "blurry", modelKey: "qwen-image-edit", steps: 20, loras: [], advanced: {} });
+    const deadline = Date.now() + 1000;
+    while (!client.getLastSubmissionForTests() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
     expect(client.getLastSubmissionForTests()?.settings).toMatchObject({
       prompt: FACE_SWAP_PROMPT,
       image_mode: 1,

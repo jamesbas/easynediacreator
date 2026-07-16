@@ -27,7 +27,7 @@ export class FakeWanGpClient implements WanGpClient {
       ? { resolution: "1280x720", duration_seconds: 15, force_fps: 24, input_video_strength: 0.85, num_inference_steps: 8, guidance_scale: 3, sample_solver: "distilled_8_steps", scheduler_type: "normal" }
       : { resolution: "1024x1024", count: 1, num_inference_steps: 20, guidance_scale: model.family === "qwen" ? 4 : 5, sample_solver: "euler", scheduler_type: "normal" };
   }
-  async getModelSchema(modelType: string) {
+  async getModelSchema(modelType: string): Promise<Record<string, unknown>> {
     const model = this.requireModel(modelType);
     const resolutions = model.output === "video" ? [["Landscape 720p", "1280x720"], ["Portrait 720p", "720x1280"]] : [["Square", "1024x1024"], ["Landscape", "1344x768"], ["Portrait", "768x1344"]];
     const sampleSolvers = model.output === "video" ? [["Distilled 8 Steps", "distilled_8_steps"], ["Euler", "euler"], ["HQ", "res2s"]] : [["Euler", "euler"], ["DPM++", "dpm++"], ["Lightning", "lightning"]];

@@ -4,7 +4,7 @@ import { config } from "@/lib/config";
 import { getModels } from "@/lib/runtime/model-cache";
 import { getAppPreferences } from "@/lib/runtime/app-preferences";
 import { getJob } from "@/lib/runtime/job-registry";
-import { FLUX_KLEIN_IMAGE_PRESET } from "@/lib/wan-gp/image-presets";
+import { FLUX_KLEIN_IMAGE_PRESET, getImageFallbackResolutions } from "@/lib/wan-gp/image-presets";
 import { hasGuidanceOneMarker } from "@/lib/wan-gp/image-guidance";
 import { getGenerationControls } from "@/lib/wan-gp/generation-controls";
 
@@ -16,7 +16,7 @@ export default async function CreateImagePage({ searchParams }: { searchParams: 
   const models = discovered.filter((model) => model.workflowType === "image-create").map((model) => {
     const fluxPreset = model.key === "flux-klein-9b" ? FLUX_KLEIN_IMAGE_PRESET : undefined;
     const controlDefaults = fluxPreset ? { ...model.defaults, resolution: fluxPreset.defaultResolution, num_inference_steps: fluxPreset.defaultSteps } : model.defaults;
-    const controls = getGenerationControls(model.schema, controlDefaults, { workflow: "image", fallbackResolutions: fluxPreset ? [...fluxPreset.resolutions] : [], fallbackResolution: fluxPreset?.defaultResolution ?? (typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1024x1024") });
+    const controls = getGenerationControls(model.schema, controlDefaults, { workflow: "image", fallbackResolutions: getImageFallbackResolutions(model.key), fallbackResolution: fluxPreset?.defaultResolution ?? (typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1024x1024") });
     return {
       key: model.key,
       displayName: model.displayName,

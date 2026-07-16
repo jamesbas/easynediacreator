@@ -16,7 +16,7 @@ export type GenerationControls = {
 
 type ControlOptions = {
   workflow: "image" | "video";
-  fallbackResolutions: string[];
+  fallbackResolutions: Array<string | GenerationChoice>;
   fallbackResolution: string;
 };
 
@@ -110,8 +110,8 @@ function hasSetting(schema: Record<string, unknown>, defaults: Record<string, un
 
 export function getGenerationControls(schema: Record<string, unknown>, defaults: Record<string, unknown>, options: ControlOptions): GenerationControls {
   const discoveredResolutions = choicesFor(schema, "resolution", ["resolutions"]);
-  const fallbackResolutions = options.fallbackResolutions.length ? options.fallbackResolutions : [options.fallbackResolution];
-  const resolutions = discoveredResolutions.length ? discoveredResolutions : fallbackResolutions.map((value) => ({ label: value, value }));
+  const fallbackResolutions = normalizeChoices(options.fallbackResolutions.length ? options.fallbackResolutions : [options.fallbackResolution]);
+  const resolutions = discoveredResolutions.length ? discoveredResolutions : fallbackResolutions;
   const configuredResolution = typeof defaults.resolution === "string" ? defaults.resolution : options.fallbackResolution;
   const defaultResolution = resolutions.some((choice) => choice.value === configuredResolution) ? configuredResolution : resolutions[0]?.value ?? options.fallbackResolution;
   const steps = numericConstraint(schema, defaults, ["num_inference_steps", "steps"], { min: 1, max: 200, step: 1, defaultValue: options.workflow === "video" ? 8 : 20 }, ["steps_slider", "inference_steps_slider"]);

@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { getJob, resetJobsForTests } from "@/lib/runtime/job-registry";
+import { clearModelCache } from "@/lib/runtime/model-cache";
 import { getOutput, publicAsset, resetOutputsForTests } from "@/lib/runtime/output-registry";
 import { createImage } from "@/lib/services/image-create-service";
 import { FakeWanGpClient } from "@/lib/wan-gp/fake-client";
 import { setWanGpClientForTests } from "@/lib/wan-gp";
 
 describe("image creation", () => {
-  beforeEach(() => { resetJobsForTests(); resetOutputsForTests(); setWanGpClientForTests(new FakeWanGpClient()); });
+  beforeEach(() => { resetJobsForTests(); resetOutputsForTests(); clearModelCache(); setWanGpClientForTests(new FakeWanGpClient()); });
   it("runs a queued image job and exposes only an opaque output handle", async () => {
     const client = new FakeWanGpClient();
     setWanGpClientForTests(client);
@@ -51,5 +52,25 @@ describe("image creation", () => {
     await expect(createImage({ ...base, guidanceScale: 31 })).rejects.toThrow(/Guidance/);
     await expect(createImage({ ...base, sampleSolver: "unknown" })).rejects.toThrow(/Solver/);
     await expect(createImage({ ...base, scheduler: "unknown" })).rejects.toThrow(/Scheduler/);
+  });
+
+  it("accepts a Qwen 1080p fallback when MCP omits resolution choices", async () => {
+    class QwenResolutionFallbackClient extends FakeWanGpClient {
+      override async getModelSchema(modelType: string) {
+        const schema = await super.getModelSchema(modelType) as Record<string, unknown>;
+        if (modelType !== "qwen_image_fixture") return schema;
+        const modelDefinition = { ...schema.model_def as Record<string, unknown> };
+        delete modelDefinition.resolutions;
+        const fallbackSchema: Record<string, unknown> = { ...schema, model_def: modelDefinition };
+        delete fallbackSchema.resolutions;
+        return fallbackSchema;
+      }
+    }
+    const client = new QwenResolutionFallbackClient();
+    setWanGpClientForTests(client);
+    await createImage({ prompt: "Vertical portrait", negativePrompt: "blurry", modelKey: "qwen-image", resolution: "1088x1920", count: 1, steps: 20, loras: [], advanced: {} });
+    const deadline = Date.now() + 1000;
+    while (!client.getLastSubmissionForTests() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(client.getLastSubmissionForTests()?.settings.resolution).toBe("1088x1920");
   });
 });
