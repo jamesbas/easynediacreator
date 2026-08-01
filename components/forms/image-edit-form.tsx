@@ -5,13 +5,16 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FACE_SWAP_LORAS, FACE_SWAP_PROMPT, FACE_SWAP_STEPS } from "@/lib/face-swap-preset";
+import type { CharacterReferenceSummary } from "@/components/settings/character-reference-images";
 import { DEFAULT_NEGATIVE_PROMPT, type ImageEditRequest } from "@/lib/requests";
 import { SHARPEN_UNBLUR_LORA, SHARPEN_UNBLUR_PROMPT } from "@/lib/sharpen-unblur-preset";
 import type { LoraAccelerationPreset, LoraCatalog } from "@/lib/types";
 import type { GenerationControls } from "@/lib/wan-gp/generation-controls";
+import { supportsTextToImage } from "@/lib/wan-gp/text-to-image";
 import { LoraSelector, readLoraSelections } from "./lora-selector";
 
-type FormModel = { key: string; displayName: string; availability: string; controls: GenerationControls; loraCatalog: LoraCatalog };
+/** `maxReferenceImages` is the total `image_refs` budget; on Krea 2 the edited frame takes one of those slots. */
+type FormModel = { key: string; displayName: string; availability: string; capabilities: string[]; maxReferenceImages?: number; maxReferenceImagesWithSource?: number; controls: GenerationControls; loraCatalog: LoraCatalog };
 type AssetOption = { id: string; filename: string; contentUrl: string };
 type ReferenceFile = { id: string; file: File; preview: string };
 const MAX_BATCH_SOURCES = 10;
@@ -25,7 +28,7 @@ async function uploadImage(file: File) {
   return String(result.upload.id);
 }
 
-export function ImageEditForm({ models, assets, defaultModel, initialAssetId, initialRequest }: { models: FormModel[]; assets: AssetOption[]; defaultModel: string; initialAssetId?: string; initialRequest?: ImageEditRequest }) {
+export function ImageEditForm({ models, assets, characterReferences, defaultModel, initialAssetId, initialRequest }: { models: FormModel[]; assets: AssetOption[]; characterReferences: CharacterReferenceSummary[]; defaultModel: string; initialAssetId?: string; initialRequest?: ImageEditRequest }) {
   const router = useRouter();
   const previewUrls = useRef(new Set<string>());
   const previousPrompt = useRef("");
@@ -33,9 +36,11 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
   const [sourceFiles, setSourceFiles] = useState<ReferenceFile[]>([]);
   const [sourceUploadId, setSourceUploadId] = useState(initialRequest?.sourceUploadId ?? "");
   const [sourceAssetId, setSourceAssetId] = useState(initialRequest?.sourceAssetId ?? initialAssetId ?? "");
+  const [skipSource, setSkipSource] = useState(Boolean(initialRequest && !initialRequest.sourceUploadId && !initialRequest.sourceAssetId));
   const [referenceFiles, setReferenceFiles] = useState<ReferenceFile[]>([]);
   const [referenceUploadIds, setReferenceUploadIds] = useState<string[]>(initialRequest?.referenceUploadIds ?? []);
   const [referenceAssetIds, setReferenceAssetIds] = useState<string[]>(initialRequest?.referenceAssetIds ?? []);
+  const [useCharacterReferences, setUseCharacterReferences] = useState(Boolean(initialRequest?.characterReferenceIds?.length));
   const reusableModel = models.find((model) => model.key === initialRequest?.modelKey && model.availability === "available");
   const [modelKey, setModelKey] = useState(reusableModel?.key ?? models.find((model) => model.key === defaultModel && model.availability === "available")?.key ?? models.find((model) => model.availability === "available")?.key ?? "");
   const selected = models.find((model) => model.key === modelKey);
@@ -53,8 +58,12 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
   const [submitting, setSubmitting] = useState(false);
   const [submissionProgress, setSubmissionProgress] = useState<{ current: number; total: number }>();
   const qwenModel = models.find((model) => model.key === "qwen-image-edit" && model.availability === "available");
+  const referenceModels = models.filter((model) => model.availability === "available" && model.maxReferenceImages);
+  const textToImageModels = models.filter((model) => model.availability === "available" && supportsTextToImage(model));
   const sharpenUnblurAvailable = Boolean(qwenModel?.loraCatalog.loras.some((name) => name.toLocaleLowerCase() === SHARPEN_UNBLUR_LORA.name.toLocaleLowerCase()));
-  const referenceCount = referenceFiles.length + referenceUploadIds.length + referenceAssetIds.length;
+  const referenceCount = referenceFiles.length + referenceUploadIds.length + referenceAssetIds.length + (useCharacterReferences ? characterReferences.length : 0);
+  const referenceLimit = (skipSource ? selected?.maxReferenceImages : selected?.maxReferenceImagesWithSource) ?? 0;
+  const fallbackReferenceLimit = (skipSource ? referenceModels[0]?.maxReferenceImages : referenceModels[0]?.maxReferenceImagesWithSource) ?? 0;
   const batchPreset = faceSwap || sharpenUnblur;
   const sourceCount = sourceFiles.length || (sourceUploadId || sourceAssetId ? 1 : 0);
   const effectiveGuidance = faceSwap ? 1 : accelerationPreset?.settings.guidanceScale ?? guidanceScale;
@@ -128,17 +137,33 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
     });
   };
 
+  const setSkipSourceEnabled = (enabled: boolean) => {
+    setError("");
+    setSkipSource(enabled);
+    if (!enabled) return;
+    clearSourceFiles();
+    setSourceUploadId("");
+    setSourceAssetId("");
+    if (!selected || !supportsTextToImage(selected)) { const fallback = textToImageModels[0]; if (fallback) selectModel(fallback.key); }
+  };
+
   const addReferenceFiles = useCallback((files: File[]) => {
-    const remaining = 8 - referenceCount;
+    const target = selected?.maxReferenceImages ? selected : referenceModels[0];
+    if (!target) {
+      setError("No installed image-edit model accepts reference images.");
+      return;
+    }
+    const limit = (skipSource ? target.maxReferenceImages : target.maxReferenceImagesWithSource) ?? 0;
+    const remaining = limit - referenceCount;
     if (remaining <= 0) {
-      setError("Choose no more than 8 reference images.");
+      setError(`${target.displayName} accepts no more than ${limit} reference images${skipSource ? "" : " alongside the image being edited"}.`);
       return;
     }
     const accepted = files.filter((item) => item.type.startsWith("image/")).slice(0, remaining);
-    if (accepted.length !== files.length) setError("Only the first 8 valid image references were added.");
+    if (accepted.length !== files.length) setError(`Only the first ${remaining} valid image references were added.`);
     setReferenceFiles((current) => [...current, ...accepted.map((item) => ({ id: crypto.randomUUID(), file: item, preview: createPreview(item) }))]);
-    if (accepted.length && qwenModel) selectModel(qwenModel.key);
-  }, [createPreview, qwenModel, referenceCount, selectModel]);
+    if (accepted.length && target.key !== modelKey) selectModel(target.key);
+  }, [createPreview, modelKey, referenceCount, referenceModels, selectModel, selected, skipSource]);
 
   const removeReferenceFile = (id: string) => {
     setReferenceFiles((current) => current.filter((item) => {
@@ -158,6 +183,7 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
         previousSteps.current = steps;
       }
       setSharpenUnblur(false);
+      setSkipSource(false);
       setAccelerationPreset(undefined);
       if (qwenModel) selectModel(qwenModel.key);
       setPrompt(FACE_SWAP_PROMPT);
@@ -179,6 +205,7 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
         setFaceSwap(false);
         setSteps(previousSteps.current);
       }
+      setSkipSource(false);
       setAccelerationPreset(undefined);
       setPrompt(SHARPEN_UNBLUR_PROMPT);
     } else {
@@ -190,11 +217,11 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
   useEffect(() => {
     const paste = (event: ClipboardEvent) => {
       const images = [...(event.clipboardData?.files ?? [])].filter((item) => item.type.startsWith("image/"));
-      if (images.length) addSourceFiles(images);
+      if (images.length && !skipSource) addSourceFiles(images);
     };
     window.addEventListener("paste", paste);
     return () => window.removeEventListener("paste", paste);
-  }, [addSourceFiles]);
+  }, [addSourceFiles, skipSource]);
 
   useEffect(() => {
     const urls = previewUrls.current;
@@ -214,8 +241,8 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
     let submittedCount = 0;
     try {
       const submittedSourceUploadIds: Array<string | undefined> = [];
-      for (const source of sourceFiles) submittedSourceUploadIds.push(await uploadImage(source.file));
-      if (!submittedSourceUploadIds.length) submittedSourceUploadIds.push(sourceUploadId || undefined);
+      if (!skipSource) for (const source of sourceFiles) submittedSourceUploadIds.push(await uploadImage(source.file));
+      if (!submittedSourceUploadIds.length) submittedSourceUploadIds.push(skipSource ? undefined : sourceUploadId || undefined);
       const submittedReferenceUploadIds = [...referenceUploadIds, ...await Promise.all(referenceFiles.map((reference) => uploadImage(reference.file)))];
       const data = new FormData(form);
       let lastJobId = "";
@@ -226,9 +253,10 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             sourceUploadId: submittedSourceUploadId,
-            sourceAssetId: submittedSourceUploadId ? undefined : sourceAssetId || undefined,
+            sourceAssetId: skipSource || submittedSourceUploadId ? undefined : sourceAssetId || undefined,
             referenceUploadIds: submittedReferenceUploadIds,
             referenceAssetIds,
+            characterReferenceIds: useCharacterReferences ? characterReferences.map((reference) => reference.id) : [],
             faceSwap,
             sharpenUnblur,
             prompt,
@@ -261,23 +289,44 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
   }}>
     <div className="space-y-6">
       <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
-        <div className="flex items-start justify-between gap-4"><div><h2 className="text-sm font-bold">Source {batchPreset ? "images" : "image"}</h2>{batchPreset && <p className="mt-1 text-xs leading-5 text-[var(--muted)]">Each source becomes a separate job with these preset settings.</p>}</div>{batchPreset && <span className="shrink-0 text-xs font-bold text-[var(--muted)]">{sourceCount}/{MAX_BATCH_SOURCES}</span>}</div>
-        <label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addSourceFiles([...event.dataTransfer.files]); }} className={`mt-3 flex cursor-pointer items-center justify-center overflow-hidden border border-dashed border-[#9ca69d] bg-[#f6f4ee] text-center hover:border-[var(--teal)] ${sourceFiles.length > 1 ? "min-h-28" : "min-h-52"}`}>
-          {sourceFiles.length === 1 ? <span className="relative block h-80 w-full"><Image src={sourceFiles[0].preview} alt="Selected source preview" fill sizes="(max-width: 1024px) 100vw, 70vw" className="object-contain" unoptimized /></span> : sourceFiles.length > 1 ? <span><ImagePlus className="mx-auto mb-2 text-[var(--teal)]" size={26} /><strong className="block">Add more source images</strong><span className="mt-1 block text-xs text-[var(--muted)]">{sourceFiles.length} selected</span></span> : sourceUploadId ? <span className="relative block h-80 w-full"><Image src={`/api/uploads/${sourceUploadId}/content`} alt="Selected source preview" fill sizes="(max-width: 1024px) 100vw, 70vw" className="object-contain" unoptimized /></span> : <span><ImagePlus className="mx-auto mb-3 text-[var(--teal)]" size={30} /><strong className="block">Drop, paste, or choose {batchPreset ? "source images" : "an image"}</strong><span className="mt-1 block text-xs text-[var(--muted)]">JPEG, PNG, or WebP{batchPreset ? `, up to ${MAX_BATCH_SOURCES}` : ""}</span></span>}
-          <input className="sr-only" type="file" multiple={batchPreset} accept="image/jpeg,image/png,image/webp" disabled={batchPreset && sourceFiles.length >= MAX_BATCH_SOURCES} onChange={(event) => { addSourceFiles([...(event.target.files ?? [])]); event.target.value = ""; }} />
-        </label>
-        {sourceFiles.length > 1 && <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{sourceFiles.map((source, index) => <div key={source.id} className="relative aspect-square overflow-hidden border border-[var(--line)] bg-[#f6f4ee]"><Image src={source.preview} alt={`Source ${index + 1}`} fill sizes="(max-width: 640px) 50vw, 220px" className="object-cover" unoptimized /><span className="absolute bottom-2 left-2 rounded-sm bg-white px-2 py-1 text-xs font-bold shadow-sm">{index + 1}</span><button type="button" onClick={() => removeSourceFile(source.id)} title="Remove source" aria-label={`Remove source ${index + 1}`} className="absolute right-2 top-2 grid size-9 place-items-center rounded-md bg-white text-[var(--foreground)] shadow-sm"><Trash2 size={16} /></button></div>)}</div>}
-        {assets.length > 0 && <label className="mt-4 block text-sm font-bold">Or choose an output<select value={sourceAssetId} onChange={(event) => { setSourceAssetId(event.target.value); if (event.target.value) { clearSourceFiles(); setSourceUploadId(""); } }} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 font-normal"><option value="">Select an image...</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>}
+        <div className="flex items-start justify-between gap-4">
+          <div><h2 className="text-sm font-bold">Source {batchPreset ? "images" : "image"}</h2>{batchPreset && <p className="mt-1 text-xs leading-5 text-[var(--muted)]">Each source becomes a separate job with these preset settings.</p>}</div>
+          <div className="flex shrink-0 items-center gap-4">
+            {batchPreset && <span className="text-xs font-bold text-[var(--muted)]">{sourceCount}/{MAX_BATCH_SOURCES}</span>}
+            {textToImageModels.length > 0 && <label className={`flex items-center gap-3 ${batchPreset ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
+              <span className="text-xs font-bold">Skip the source image</span>
+              <span className="relative h-6 w-11 shrink-0">
+                <input type="checkbox" className="peer absolute inset-0 z-10 m-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed" role="switch" checked={skipSource} disabled={batchPreset} onChange={(event) => setSkipSourceEnabled(event.target.checked)} />
+                <span aria-hidden="true" className="absolute inset-0 rounded-full bg-[#aeb5af] transition-colors after:absolute after:left-1 after:top-1 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:bg-[var(--teal)] peer-checked:after:translate-x-5 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--teal)]" />
+              </span>
+            </label>}
+          </div>
+        </div>
+        {skipSource ? <p className="mt-3 border border-dashed border-[#9ca69d] bg-[#f6f4ee] p-6 text-center text-sm leading-6 text-[var(--muted)]">Generating from the prompt alone. {selected?.displayName ?? "This model"} also renders text-to-image, so no image to edit is needed.</p> : <>
+          <label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addSourceFiles([...event.dataTransfer.files]); }} className={`mt-3 flex cursor-pointer items-center justify-center overflow-hidden border border-dashed border-[#9ca69d] bg-[#f6f4ee] text-center hover:border-[var(--teal)] ${sourceFiles.length > 1 ? "min-h-28" : "min-h-52"}`}>
+            {sourceFiles.length === 1 ? <span className="relative block h-80 w-full"><Image src={sourceFiles[0].preview} alt="Selected source preview" fill sizes="(max-width: 1024px) 100vw, 70vw" className="object-contain" unoptimized /></span> : sourceFiles.length > 1 ? <span><ImagePlus className="mx-auto mb-2 text-[var(--teal)]" size={26} /><strong className="block">Add more source images</strong><span className="mt-1 block text-xs text-[var(--muted)]">{sourceFiles.length} selected</span></span> : sourceUploadId ? <span className="relative block h-80 w-full"><Image src={`/api/uploads/${sourceUploadId}/content`} alt="Selected source preview" fill sizes="(max-width: 1024px) 100vw, 70vw" className="object-contain" unoptimized /></span> : <span><ImagePlus className="mx-auto mb-3 text-[var(--teal)]" size={30} /><strong className="block">Drop, paste, or choose {batchPreset ? "source images" : "an image"}</strong><span className="mt-1 block text-xs text-[var(--muted)]">JPEG, PNG, or WebP{batchPreset ? `, up to ${MAX_BATCH_SOURCES}` : ""}</span></span>}
+            <input className="sr-only" type="file" multiple={batchPreset} accept="image/jpeg,image/png,image/webp" disabled={batchPreset && sourceFiles.length >= MAX_BATCH_SOURCES} onChange={(event) => { addSourceFiles([...(event.target.files ?? [])]); event.target.value = ""; }} />
+          </label>
+          {sourceFiles.length > 1 && <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{sourceFiles.map((source, index) => <div key={source.id} className="relative aspect-square overflow-hidden border border-[var(--line)] bg-[#f6f4ee]"><Image src={source.preview} alt={`Source ${index + 1}`} fill sizes="(max-width: 640px) 50vw, 220px" className="object-cover" unoptimized /><span className="absolute bottom-2 left-2 rounded-sm bg-white px-2 py-1 text-xs font-bold shadow-sm">{index + 1}</span><button type="button" onClick={() => removeSourceFile(source.id)} title="Remove source" aria-label={`Remove source ${index + 1}`} className="absolute right-2 top-2 grid size-9 place-items-center rounded-md bg-white text-[var(--foreground)] shadow-sm"><Trash2 size={16} /></button></div>)}</div>}
+          {assets.length > 0 && <label className="mt-4 block text-sm font-bold">Or choose an output<select value={sourceAssetId} onChange={(event) => { setSourceAssetId(event.target.value); if (event.target.value) { clearSourceFiles(); setSourceUploadId(""); } }} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 font-normal"><option value="">Select an image...</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>}
+        </>}
       </section>
 
       <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
-        <div className="flex items-start justify-between gap-4"><div><h2 className="text-sm font-bold">Reference images</h2><p className="mt-1 text-xs leading-5 text-[var(--muted)]">Add people or objects that Qwen should use while editing the source.</p></div><span className="shrink-0 text-xs font-bold text-[var(--muted)]">{referenceCount}/8</span></div>
+        <div className="flex items-start justify-between gap-4"><div><h2 className="text-sm font-bold">Reference images</h2><p className="mt-1 text-xs leading-5 text-[var(--muted)]">People or objects the model should carry into the edited image.</p></div><span className="shrink-0 text-xs font-bold text-[var(--muted)]">{referenceCount}/{referenceLimit || fallbackReferenceLimit}</span></div>
+        {characterReferences.length > 0 && <label className="mt-3 flex cursor-pointer items-center justify-between gap-3 border border-[var(--line)] bg-white p-3">
+          <span className="flex items-center gap-3">
+            <span className="flex -space-x-3">{characterReferences.map((reference, index) => <span key={reference.id} className="relative size-10 overflow-hidden rounded-full border-2 border-white bg-[#f6f4ee]"><Image src={`/api/settings/character-references/${reference.id}/content`} alt={`Saved character reference ${index + 1}`} fill sizes="40px" className="object-cover" unoptimized /></span>)}</span>
+            <span><span className="flex items-center gap-2 text-sm font-bold"><UserRoundCheck size={17} />Use character references</span><span className="mt-1 block text-xs leading-5 text-[var(--muted)]">{characterReferences.length} saved in Settings.</span></span>
+          </span>
+          <input type="checkbox" role="switch" checked={useCharacterReferences} onChange={(event) => { setUseCharacterReferences(event.target.checked); if (event.target.checked && !selected?.maxReferenceImages && referenceModels[0]) selectModel(referenceModels[0].key); }} className="size-5 shrink-0 accent-[var(--teal)]" />
+        </label>}
         <label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addReferenceFiles([...event.dataTransfer.files]); }} className="mt-3 flex min-h-28 cursor-pointer items-center justify-center border border-dashed border-[#9ca69d] bg-[#f6f4ee] px-4 text-center hover:border-[var(--teal)]">
           <span><Upload className="mx-auto mb-2 text-[var(--teal)]" size={24} /><strong className="block text-sm">Drop or choose reference images</strong></span>
           <input className="sr-only" type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => { addReferenceFiles([...(event.target.files ?? [])]); event.target.value = ""; }} />
         </label>
         {(referenceUploadIds.length > 0 || referenceFiles.length > 0) && <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{referenceUploadIds.map((uploadId, index) => <div key={uploadId} className="relative aspect-square overflow-hidden border border-[var(--line)] bg-[#f6f4ee]"><Image src={`/api/uploads/${uploadId}/content`} alt={`Saved reference ${index + 1}`} fill sizes="(max-width: 640px) 50vw, 220px" className="object-cover" unoptimized /><button type="button" onClick={() => setReferenceUploadIds((current) => current.filter((id) => id !== uploadId))} title="Remove reference" aria-label={`Remove saved reference ${index + 1}`} className="absolute right-2 top-2 grid size-9 place-items-center rounded-md bg-white text-[var(--foreground)] shadow-sm"><Trash2 size={16} /></button></div>)}{referenceFiles.map((reference, index) => <div key={reference.id} className="relative aspect-square overflow-hidden border border-[var(--line)] bg-[#f6f4ee]"><Image src={reference.preview} alt={`Reference ${referenceUploadIds.length + index + 1}`} fill sizes="(max-width: 640px) 50vw, 220px" className="object-cover" unoptimized /><button type="button" onClick={() => removeReferenceFile(reference.id)} title="Remove reference" aria-label={`Remove reference ${referenceUploadIds.length + index + 1}`} className="absolute right-2 top-2 grid size-9 place-items-center rounded-md bg-white text-[var(--foreground)] shadow-sm"><Trash2 size={16} /></button></div>)}</div>}
-        {assets.length > 0 && <fieldset className="mt-4"><legend className="text-sm font-bold">Or use image outputs</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{assets.map((asset) => { const checked = referenceAssetIds.includes(asset.id); return <label key={asset.id} className="flex min-w-0 items-center gap-3 border border-[var(--line)] bg-white p-2 text-xs"><input type="checkbox" checked={checked} disabled={!checked && referenceCount >= 8} onChange={(event) => { setReferenceAssetIds((current) => event.target.checked ? [...current, asset.id] : current.filter((id) => id !== asset.id)); if (event.target.checked && qwenModel) selectModel(qwenModel.key); }} /><span className="relative size-10 shrink-0 overflow-hidden bg-[#f6f4ee]"><Image src={asset.contentUrl} alt="" fill sizes="40px" className="object-cover" unoptimized /></span><span className="truncate">{asset.filename}</span></label>; })}</div></fieldset>}
+        {assets.length > 0 && <fieldset className="mt-4"><legend className="text-sm font-bold">Or use image outputs</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{assets.map((asset) => { const checked = referenceAssetIds.includes(asset.id); return <label key={asset.id} className="flex min-w-0 items-center gap-3 border border-[var(--line)] bg-white p-2 text-xs"><input type="checkbox" checked={checked} disabled={!checked && referenceCount >= (referenceLimit || fallbackReferenceLimit)} onChange={(event) => { setReferenceAssetIds((current) => event.target.checked ? [...current, asset.id] : current.filter((id) => id !== asset.id)); if (event.target.checked && !selected?.maxReferenceImages && referenceModels[0]) selectModel(referenceModels[0].key); }} /><span className="relative size-10 shrink-0 overflow-hidden bg-[#f6f4ee]"><Image src={asset.contentUrl} alt="" fill sizes="40px" className="object-cover" unoptimized /></span><span className="truncate">{asset.filename}</span></label>; })}</div></fieldset>}
       </section>
 
       <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
@@ -306,7 +355,7 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
           </span>
         </label>
       </div>
-      <label className="block text-sm font-bold">Model<select value={modelKey} disabled={faceSwap || sharpenUnblur || referenceCount > 0} onChange={(event) => selectModel(event.target.value)} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available" || (referenceCount > 0 && model.key !== "qwen-image-edit")}>{model.displayName}</option>)}</select></label>
+      <label className="block text-sm font-bold">Model<select value={modelKey} disabled={faceSwap || sharpenUnblur || referenceCount > 0} onChange={(event) => selectModel(event.target.value)} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available" || (referenceCount > 0 && !model.maxReferenceImages) || (skipSource && !supportsTextToImage(model))}>{model.displayName}</option>)}</select></label>
       <label className="block text-sm font-bold">Resolution<select name="resolution" key={modelKey} defaultValue={reuseSelections ? initialRequest?.resolution ?? selected?.controls.defaultResolution : selected?.controls.defaultResolution} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3">{(selected?.controls.resolutions ?? [{ label: "1024x1024", value: "1024x1024" }]).map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></label>
       <label className="block text-sm font-bold">Steps<input name="steps" type="number" min={selected?.controls.steps.min ?? 1} max={selected?.controls.steps.max ?? 200} step={selected?.controls.steps.step ?? 1} value={accelerationPreset?.settings.numInferenceSteps ?? steps} disabled={faceSwap || accelerationPreset?.settings.numInferenceSteps !== undefined} onChange={(event) => setSteps(Number(event.target.value))} required className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]" /></label>
       {selected?.controls.guidance && <label className="block text-sm font-bold">Guidance (CFG)<input name="guidanceScale" type="number" min={selected.controls.guidance.min} max={selected.controls.guidance.max} step={selected.controls.guidance.step} value={effectiveGuidance} disabled={faceSwap || accelerationPreset?.settings.guidanceScale !== undefined} onChange={(event) => setGuidanceScale(Number(event.target.value))} required className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]" /></label>}
@@ -316,7 +365,7 @@ export function ImageEditForm({ models, assets, defaultModel, initialAssetId, in
         {selected?.controls.schedulers.length ? <label className="block text-sm font-bold">Scheduler<select className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3" value={scheduler} onChange={(event) => setScheduler(event.target.value)}><option value="">Model default</option>{selected.controls.schedulers.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></label> : null}
         <label className="block text-sm font-bold">Seed<input name="seed" type="number" min="0" max="2147483647" placeholder="Random" defaultValue={initialRequest?.seed} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3" /></label>
       </div></details>
-      <button disabled={submitting || !modelKey || !sourceCount || (faceSwap && referenceCount !== 1)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-5 font-bold text-white disabled:opacity-50"><Paintbrush size={18} />{submitting ? submissionProgress && submissionProgress.total > 1 ? `Submitting ${submissionProgress.current} of ${submissionProgress.total}...` : "Submitting..." : faceSwap ? sourceCount > 1 ? `Start ${sourceCount} face swaps` : "Swap face" : sharpenUnblur ? sourceCount > 1 ? `Sharpen ${sourceCount} images` : "Sharpen image" : "Edit image"}</button>
+      <button disabled={submitting || !modelKey || (!skipSource && !sourceCount) || (faceSwap && referenceCount !== 1)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-5 font-bold text-white disabled:opacity-50"><Paintbrush size={18} />{submitting ? submissionProgress && submissionProgress.total > 1 ? `Submitting ${submissionProgress.current} of ${submissionProgress.total}...` : "Submitting..." : faceSwap ? sourceCount > 1 ? `Start ${sourceCount} face swaps` : "Swap face" : sharpenUnblur ? sourceCount > 1 ? `Sharpen ${sourceCount} images` : "Sharpen image" : skipSource ? "Generate image" : "Edit image"}</button>
       <p className="flex gap-2 text-xs leading-5 text-[var(--muted)]"><Upload size={15} className="mt-0.5 shrink-0" />Images remain local and are sent to your configured WanGP server.</p>
     </aside>
   </form>;

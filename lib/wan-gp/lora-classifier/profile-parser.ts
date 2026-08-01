@@ -36,6 +36,9 @@ function profileMatchesWorkflow(label: string, directoryName: string, modelType:
   if (directoryName === "qwen") return workflowType === "image-edit" ? normalized.includes("edit") : workflowType === "image-create" && !normalized.includes("edit");
   if (directoryName === "ltx2_dev_accelerators") return workflowType === "video-create" && !/distilled/i.test(modelType);
   if (directoryName.startsWith("ltx2")) return workflowType === "video-create";
+  // WanGP points all four Krea 2 checkpoints at the same `krea2` profile folder,
+  // so a profile is not split between creating and editing the way Qwen's is.
+  if (directoryName.startsWith("krea2")) return workflowType.startsWith("image-") && /krea/i.test(modelType);
   if (directoryName.startsWith("flux")) return workflowType.startsWith("image-") && /flux/i.test(modelType);
   if (directoryName.startsWith("wan")) return workflowType === "video-create" && /wan/i.test(modelType);
   return false;

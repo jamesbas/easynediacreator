@@ -41,6 +41,7 @@ yarn-error.log*
 /data/outputs/*
 /data/thumbnails/*
 /data/temp/*
+/data/character-references/*
 /data/model-selections.json
 /data/app-preferences.json
 /data/lora-classifier-overrides.json

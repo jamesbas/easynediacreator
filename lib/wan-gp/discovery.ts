@@ -2,15 +2,22 @@ import { config } from "@/lib/config";
 import type { ModelOption, WorkflowType } from "@/lib/types";
 import type { WanGpClient, WanGpModelSummary } from "./client";
 import { classifyLoraCatalog } from "./lora-classifier/classify";
+import { REFERENCE_IMAGE_CAPABILITY } from "./reference-images";
 
-export type LogicalRule = { key: string; displayName: string; workflowType: WorkflowType; family: string; output: "image" | "video"; requiresImage?: boolean; namePattern?: RegExp };
+export type LogicalRule = { key: string; displayName: string; workflowType: WorkflowType; family: string; output: "image" | "video"; requiresImage?: boolean; namePattern?: RegExp; preferredPatterns?: RegExp[]; maxReferenceImages?: number; sourceUsesReferenceSlot?: boolean };
 
 const rules: LogicalRule[] = [
-  { key: "qwen-image", displayName: "Qwen Image", workflowType: "image-create", family: "qwen", output: "image", namePattern: /qwen(?!.*edit)/i },
-  { key: "flux-klein-9b", displayName: "Flux.2 Klein 9B", workflowType: "image-create", family: "flux", output: "image", namePattern: /klein.*9b/i },
-  { key: "qwen-image-edit", displayName: "Qwen Image Edit", workflowType: "image-edit", family: "qwen", output: "image", requiresImage: true, namePattern: /qwen.*edit/i },
+  { key: "qwen-image", displayName: "Qwen Image", workflowType: "image-create", family: "qwen", output: "image", namePattern: /qwen(?!.*edit)/i, maxReferenceImages: 8 },
+  { key: "flux-klein-9b", displayName: "Flux.2 Klein 9B", workflowType: "image-create", family: "flux", output: "image", namePattern: /klein.*9b/i, maxReferenceImages: 4 },
+  // Krea 2 RAW and Turbo are text-to-image only: WanGP publishes `image_ref_choices`
+  // on the Identity Edit checkpoints alone, so a reference sent here is discarded.
+  { key: "krea-2", displayName: "Krea 2", workflowType: "image-create", family: "krea2", output: "image", namePattern: /krea(?!.*edit)/i, preferredPatterns: [/turbo/i] },
+  { key: "qwen-image-edit", displayName: "Qwen Image Edit", workflowType: "image-edit", family: "qwen", output: "image", requiresImage: true, namePattern: /qwen.*edit/i, maxReferenceImages: 8 },
   { key: "flux-klein-9b", displayName: "Flux.2 Klein 9B", workflowType: "image-edit", family: "flux", output: "image", requiresImage: true, namePattern: /klein.*9b/i },
-  { key: "ltx-2", displayName: "LTX-2", workflowType: "video-create", family: "ltx2", output: "video", requiresImage: true, namePattern: /ltx.?2/i },
+  // Krea 2 Identity Edit caps `image_refs` at two entries in total, and the
+  // image being edited occupies the first when one is supplied.
+  { key: "krea-2-edit", displayName: "Krea 2 Identity Edit", workflowType: "image-edit", family: "krea2", output: "image", namePattern: /krea.*edit/i, preferredPatterns: [/turbo/i], maxReferenceImages: 2, sourceUsesReferenceSlot: true },
+  { key: "ltx-2", displayName: "LTX-2", workflowType: "video-create", family: "ltx2", output: "video", requiresImage: true, namePattern: /ltx.?2/i, preferredPatterns: [/distilled.*1\.1/i, /distilled/i] },
 ];
 
 function enabled(rule: LogicalRule) {
@@ -29,6 +36,7 @@ export function getWanGpCapabilities(metadata: Record<string, unknown>) {
   if (imageInputs && typeof imageInputs === "object") {
     if ("start" in imageInputs && imageInputs.start === true) capabilities.push("start-frame");
     if ("end" in imageInputs && imageInputs.end === true) capabilities.push("end-frame");
+    if ("reference" in imageInputs && imageInputs.reference === true) capabilities.push(REFERENCE_IMAGE_CAPABILITY);
   }
   return [...new Set(capabilities)];
 }
@@ -47,11 +55,19 @@ export function matchModel(rule: LogicalRule, models: WanGpModelSummary[], prefe
   const matches = matchingModels(rule, models);
   const preferred = matches.find((model) => model.modelType === preferredModelType && model.availability === "available");
   if (preferred) return preferred;
-  if (rule.key === "ltx-2") {
-    const distilled = matches.find((model) => model.availability === "available" && /distilled.*1\.1/i.test(model.name)) ?? matches.find((model) => model.availability === "available" && /distilled/i.test(model.name));
-    if (distilled) return distilled;
+  // Installed models outrank ones WanGP would have to download; only within a
+  // tier does the rule's preferred variant break the tie, so a fast checkpoint
+  // that is missing never displaces a slower one that is present.
+  const tiers = [matches.filter((model) => model.availability === "available"), matches.filter((model) => model.availability === "partial"), matches];
+  for (const tier of tiers) {
+    if (!tier.length) continue;
+    for (const pattern of rule.preferredPatterns ?? []) {
+      const variant = tier.find((model) => pattern.test(model.name));
+      if (variant) return variant;
+    }
+    return tier[0];
   }
-  return matches.find((model) => model.availability === "available") ?? matches.find((model) => model.availability === "partial") ?? matches[0];
+  return undefined;
 }
 
 export async function discoverModels(client: WanGpClient, selections: Record<string, string> = {}): Promise<ModelOption[]> {
@@ -65,8 +81,11 @@ export async function discoverModels(client: WanGpClient, selections: Record<str
       client.getModelAvailability(model.modelType), client.getModelSchema(model.modelType).catch(() => ({})), client.getDefaultSettings(model.modelType), client.getModelMetadata(model.modelType), client.listLoras(model.modelType),
     ]);
     const effectiveSchema = Object.keys(schema).length ? schema : { metadata };
-    const capabilities = getWanGpCapabilities(metadata);
+    // Reference support is declared by the rule as well as discovered, because WanGP
+    // reports `media_inputs` inconsistently and a missed capability silently drops
+    // every reference the user attached.
+    const capabilities = [...new Set([...getWanGpCapabilities(metadata), ...(rule.maxReferenceImages ? [REFERENCE_IMAGE_CAPABILITY] : [])])];
     const classifiedCatalog = await classifyLoraCatalog({ catalog: loraCatalog, schema: effectiveSchema, metadata, modelType: model.modelType, workflowType: rule.workflowType, profilesRoot: config.WANGP_PROFILES_ROOT, metadataRoot: config.WANGP_LORA_METADATA_ROOT, overridesPath: config.WANGP_LORA_CLASSIFIER_OVERRIDES });
-    return { key: rule.key, displayName: model.name || rule.displayName, workflowType: rule.workflowType, modelType: model.modelType, availability: availability.status, reason: availability.reason, schema: effectiveSchema, defaults, capabilities, loraCatalog: classifiedCatalog, candidates };
+    return { key: rule.key, displayName: model.name || rule.displayName, workflowType: rule.workflowType, modelType: model.modelType, availability: availability.status, reason: availability.reason, schema: effectiveSchema, defaults, capabilities, maxReferenceImages: rule.maxReferenceImages, sourceUsesReferenceSlot: rule.sourceUsesReferenceSlot, loraCatalog: classifiedCatalog, candidates };
   }));
 }

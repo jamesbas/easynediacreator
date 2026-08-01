@@ -1,4 +1,5 @@
 import type { ImageCreateRequest, LoraSelection } from "@/lib/requests";
+import { REFERENCE_SUBJECTS_ONLY } from "./reference-images";
 
 function knownKeys(schema: Record<string, unknown>, defaults: Record<string, unknown>) {
   const keys = new Set(Object.keys(defaults));
@@ -20,6 +21,11 @@ function knownKeys(schema: Record<string, unknown>, defaults: Record<string, unk
   if (imageInputs.reference === true) keys.add("image_refs");
   if (imageInputs.control === true) keys.add("image_guide");
   if (imageInputs.mask === true) keys.add("image_mask");
+  // WanGP only writes `activated_loras` into a model's saved defaults after a
+  // LoRA has been picked for it in the WanGP UI, so the capability flag rather
+  // than the defaults is what proves the setting is accepted.
+  const capabilities = metadata.capabilities && typeof metadata.capabilities === "object" && !Array.isArray(metadata.capabilities) ? metadata.capabilities as Record<string, unknown> : {};
+  if (capabilities.lora === true) { keys.add("activated_loras"); keys.add("loras_multipliers"); }
   return keys;
 }
 
@@ -52,15 +58,25 @@ export function applySamplingSettings(target: Record<string, unknown>, schema: R
   setDiscoveredSetting(target, schema, defaults, modelType, ["scheduler", "scheduler_type", "scheduler_name"], request.scheduler, request.scheduler !== undefined);
 }
 
-export function commonImageSettings(request: ImageCreateRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string) {
+export function commonImageSettings(request: ImageCreateRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string, referencePaths: string[] = []) {
   if (Object.keys(request.advanced).length) throw new Error("The selected model does not allow these advanced settings.");
   const settings = { ...defaults };
   setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mode"], 1, true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["image_prompt_type"], "", true);
-  setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], "", true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["image_guide"], null);
-  setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], []);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mask"], null);
+  if (referencePaths.length) {
+    // No source frame is sent when creating, so every reference is a person or
+    // object: "I" rather than "KI". Both fields are required because WanGP
+    // ignores `image_refs` unless the letter is present.
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], referencePaths, true);
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], REFERENCE_SUBJECTS_ONLY, true);
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs_relative_size"], 50);
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["remove_background_images_ref"], 1);
+  } else {
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], "", true);
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], []);
+  }
   setDiscoveredSetting(settings, schema, defaults, modelType, ["prompt_enhancer"], "");
   setDiscoveredSetting(settings, schema, defaults, modelType, ["prompt", "text_prompt"], request.prompt, true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["negative_prompt"], request.negativePrompt, true);

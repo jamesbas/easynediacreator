@@ -222,9 +222,13 @@ test("shows exact WanGP model selections in Settings", async ({ page }) => {
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Approved models", exact: true })).toBeVisible();
   const selectors = page.getByLabel("WanGP model");
-  await expect(selectors).toHaveCount(5);
+  await expect(selectors).toHaveCount(7);
   await expect(page.getByText(/qwen_image_edit_fixture/)).toBeVisible();
   await expect(page.getByText(/ltx2_fixture/)).toBeVisible();
+  // Krea 2 ships RAW and Turbo per workflow; Turbo is preferred, and both stay
+  // pinnable here.
+  await expect(page.getByText(/krea2_turbo_fixture/)).toBeVisible();
+  await expect(page.getByText(/krea2_turbo_edit_fixture/)).toBeVisible();
 });
 
 test("inserts the default character into an existing image prompt", async ({ page }) => {
@@ -295,4 +299,21 @@ test("configures and submits the exclusive Sharpen and Unblur preset", async ({ 
     expect(request).toMatchObject({ faceSwap: false, sharpenUnblur: true, prompt: SHARPEN_UNBLUR_PROMPT, modelKey: "qwen-image-edit", steps: 20, loras: [] });
     expect(request).not.toHaveProperty("loraPresetId");
   }
+});
+
+test("submits an edit-model generation with the source image skipped", async ({ page }) => {
+  const submitted: Record<string, unknown>[] = [];
+  await page.route("**/api/jobs/image-edit", async (route) => { submitted.push(route.request().postDataJSON() as Record<string, unknown>); await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ job: { id: crypto.randomUUID() } }) }); });
+  await page.goto("/edit-image");
+  await page.getByLabel("Edit prompt").fill("A fox in fresh snow at golden hour");
+  await expect(page.getByRole("button", { name: "Edit image" })).toBeDisabled();
+  await page.getByRole("switch", { name: "Skip the source image" }).check();
+  await expect(page.getByText(/Generating from the prompt alone/)).toBeVisible();
+  await expect(page.getByText("Drop, paste, or choose an image")).toHaveCount(0);
+  await page.getByRole("button", { name: "Generate image" }).click();
+  await expect(page).toHaveURL(/\/jobs/);
+  expect(submitted).toHaveLength(1);
+  expect(submitted[0]).not.toHaveProperty("sourceUploadId");
+  expect(submitted[0]).not.toHaveProperty("sourceAssetId");
+  expect(submitted[0]).toMatchObject({ prompt: "A fox in fresh snow at golden hour", modelKey: "qwen-image-edit" });
 });

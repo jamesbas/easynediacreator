@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_CHARACTER_REFERENCES } from "@/lib/character-prompt";
 
 export const DEFAULT_NEGATIVE_PROMPT = "blurry, low resolution, pixelated, compression artifacts, deformed anatomy, distorted face, malformed hands, extra limbs, extra fingers, missing fingers, fused fingers, warped proportions, duplicate subjects, text, watermark, logo";
 
@@ -27,27 +28,47 @@ const baseGenerationSchema = z.object({
   advanced: z.record(z.string(), z.unknown()).default({}),
 });
 
+const referenceSelectionFields = {
+  referenceUploadIds: z.array(z.string().uuid()).max(8).optional(),
+  referenceAssetIds: z.array(z.string().uuid()).max(8).optional(),
+  /** Saved character reference images, opted into per generation. */
+  characterReferenceIds: z.array(z.string().uuid()).max(MAX_CHARACTER_REFERENCES).optional(),
+};
+
+export type ReferenceSelection = { referenceUploadIds?: string[]; referenceAssetIds?: string[]; characterReferenceIds?: string[] };
+
+export function countReferences(value: ReferenceSelection) {
+  return (value.referenceUploadIds?.length ?? 0) + (value.referenceAssetIds?.length ?? 0) + (value.characterReferenceIds?.length ?? 0);
+}
+
 export const imageCreateRequestSchema = baseGenerationSchema.extend({
+  ...referenceSelectionFields,
   aspectRatio: z.string().max(20).optional(),
   count: z.number().int().min(1).max(4).default(1),
   steps: z.number().int().min(1).max(1000).default(20),
   guidanceScale: z.number().finite().min(0).max(100).optional(),
+}).superRefine((value, context) => {
+  if (countReferences(value) > 8) context.addIssue({ code: "custom", path: ["referenceUploadIds"], message: "Choose no more than 8 reference images." });
 });
 
 export type ImageCreateRequest = z.infer<typeof imageCreateRequestSchema>;
 
 export const imageEditRequestSchema = baseGenerationSchema.extend({
+  ...referenceSelectionFields,
   sourceUploadId: z.string().uuid().optional(),
   sourceAssetId: z.string().uuid().optional(),
-  referenceUploadIds: z.array(z.string().uuid()).max(8).default([]),
-  referenceAssetIds: z.array(z.string().uuid()).max(8).default([]),
   faceSwap: z.boolean().default(false),
   sharpenUnblur: z.boolean().default(false),
   steps: z.number().int().min(1).max(200).default(20),
   guidanceScale: z.number().finite().min(0).max(100).optional(),
 }).superRefine((value, context) => {
-  if (Boolean(value.sourceUploadId) === Boolean(value.sourceAssetId)) context.addIssue({ code: "custom", message: "Choose exactly one source image." });
-  const referenceCount = value.referenceUploadIds.length + value.referenceAssetIds.length;
+  // A missing source is allowed: edit checkpoints that advertise text-to-image
+  // render from the prompt alone, and the service rejects the ones that cannot.
+  if (value.sourceUploadId && value.sourceAssetId) context.addIssue({ code: "custom", message: "Choose only one source image." });
+  const hasSource = Boolean(value.sourceUploadId ?? value.sourceAssetId);
+  if (!hasSource && value.faceSwap) context.addIssue({ code: "custom", path: ["faceSwap"], message: "Face swap requires a source image." });
+  if (!hasSource && value.sharpenUnblur) context.addIssue({ code: "custom", path: ["sharpenUnblur"], message: "Sharpen and Unblur requires a source image." });
+  const referenceCount = countReferences(value);
   if (referenceCount > 8) context.addIssue({ code: "custom", path: ["referenceUploadIds"], message: "Choose no more than 8 reference images." });
   if (value.faceSwap && value.modelKey !== "qwen-image-edit") context.addIssue({ code: "custom", path: ["modelKey"], message: "Face swap requires Qwen Image Edit." });
   if (value.faceSwap && referenceCount !== 1) context.addIssue({ code: "custom", path: ["referenceUploadIds"], message: "Face swap requires exactly one reference image." });

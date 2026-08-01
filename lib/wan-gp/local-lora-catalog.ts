@@ -35,6 +35,7 @@ export function getLoraDirectoryName(schema: Record<string, unknown>) {
   const baseModelType = String(metadata.base_model_type ?? modelDef.base_model_type ?? schema.model_type ?? "").toLowerCase();
   if (family === "qwen") return "qwen";
   if (family === "ltx2") return "ltx2";
+  if (family === "krea2") return "krea2";
   if (family === "flux" || family === "flux2") {
     if (baseModelType.includes("flux2_klein_9b")) return "flux2_klein_9b";
     if (baseModelType.includes("flux2_klein_4b")) return "flux2_klein_4b";

@@ -20,8 +20,20 @@ export const QWEN_IMAGE_1080P_CHOICES = [
 
 export const QWEN_IMAGE_1080P_RESOLUTIONS = QWEN_IMAGE_1080P_CHOICES.map((choice) => choice.value);
 
+/** Krea 2 publishes `resolutions_categories: ["<=2k"]` rather than a fixed list. */
+export const KREA2_IMAGE_CHOICES = [
+  { label: "1024x1024 (1:1)", value: "1024x1024" },
+  { label: "1408x1024 (11:8)", value: "1408x1024" },
+  { label: "1024x1408 (8:11)", value: "1024x1408" },
+  { label: "1536x864 (16:9)", value: "1536x864" },
+  { label: "864x1536 (9:16)", value: "864x1536" },
+  { label: "2048x1152 (16:9)", value: "2048x1152" },
+  { label: "1152x2048 (9:16)", value: "1152x2048" },
+] as const;
+
 export function getImageFallbackResolutions(modelKey: string) {
   if (modelKey === "qwen-image" || modelKey === "qwen-image-edit") return QWEN_IMAGE_1080P_CHOICES.map((choice) => ({ ...choice }));
+  if (modelKey === "krea-2" || modelKey === "krea-2-edit") return KREA2_IMAGE_CHOICES.map((choice) => ({ ...choice }));
   if (modelKey === "flux-klein-9b") return [...FLUX_KLEIN_IMAGE_PRESET.resolutions];
   return [];
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_NEGATIVE_PROMPT, imageCreateRequestSchema, imageEditRequestSchema, videoCreateRequestSchema } from "@/lib/requests";
+import { countReferences, DEFAULT_NEGATIVE_PROMPT, imageCreateRequestSchema, imageEditRequestSchema, videoCreateRequestSchema } from "@/lib/requests";
 
 describe("generation request validation", () => {
   it("defaults image generation and applies broad transport safety limits", () => {
@@ -13,8 +13,20 @@ describe("generation request validation", () => {
     expect(() => imageCreateRequestSchema.parse({ ...base, guidanceScale: 101 })).toThrow();
   });
 
-  it("defaults image editing to 20 steps", () => {
-    expect(imageEditRequestSchema.parse({ prompt: "edit", modelKey: "qwen-image-edit", sourceUploadId: crypto.randomUUID() })).toMatchObject({ steps: 20, referenceUploadIds: [], referenceAssetIds: [], faceSwap: false, sharpenUnblur: false });
+  it("defaults image editing to 20 steps and treats omitted references as none", () => {
+    const parsed = imageEditRequestSchema.parse({ prompt: "edit", modelKey: "qwen-image-edit", sourceUploadId: crypto.randomUUID() });
+    expect(parsed).toMatchObject({ steps: 20, faceSwap: false, sharpenUnblur: false });
+    expect(countReferences(parsed)).toBe(0);
+  });
+
+  it("allows image editing without a source image but not for the source-bound presets", () => {
+    const base = { prompt: "A fox in fresh snow", modelKey: "qwen-image-edit" };
+    const parsed = imageEditRequestSchema.parse(base);
+    expect(parsed.sourceUploadId).toBeUndefined();
+    expect(parsed.sourceAssetId).toBeUndefined();
+    expect(() => imageEditRequestSchema.parse({ ...base, sourceUploadId: crypto.randomUUID(), sourceAssetId: crypto.randomUUID() })).toThrow(/only one source image/);
+    expect(() => imageEditRequestSchema.parse({ ...base, faceSwap: true, referenceUploadIds: [crypto.randomUUID()] })).toThrow(/Face swap requires a source image/);
+    expect(() => imageEditRequestSchema.parse({ ...base, sharpenUnblur: true })).toThrow(/Sharpen and Unblur requires a source image/);
   });
 
   it("validates the Sharpen and Unblur exclusivity contract", () => {

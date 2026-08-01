@@ -1,13 +1,14 @@
 import type { ImageEditRequest } from "@/lib/requests";
 import { FACE_SWAP_LORAS, FACE_SWAP_PROMPT, FACE_SWAP_STEPS } from "@/lib/face-swap-preset";
+import { REFERENCE_SUBJECTS_ONLY } from "../reference-images";
 import { applyLoraSettings, applySamplingSettings, setDiscoveredSetting } from "../settings-builder";
 
-export function buildQwenImageEditSettings(request: ImageEditRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string, sourcePath: string, referencePaths: string[] = []) {
+export function buildQwenImageEditSettings(request: ImageEditRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string, sourcePath?: string, referencePaths: string[] = []) {
   if (Object.keys(request.advanced).length) throw new Error("The selected model does not allow these advanced settings.");
   const settings = { ...defaults };
   setDiscoveredSetting(settings, schema, defaults, modelType, ["prompt", "text_prompt", "instruction"], request.faceSwap ? FACE_SWAP_PROMPT : request.prompt, true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["negative_prompt"], request.negativePrompt, true);
-  if (referencePaths.length) {
+  if (sourcePath && referencePaths.length) {
     setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mode"], 1, true);
     setDiscoveredSetting(settings, schema, defaults, modelType, ["image_guide"], sourcePath, true);
     setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], referencePaths, true);
@@ -15,9 +16,22 @@ export function buildQwenImageEditSettings(request: ImageEditRequest, defaults: 
     setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], "IV", true);
     setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs_relative_size"], 50, true);
     setDiscoveredSetting(settings, schema, defaults, modelType, ["remove_background_images_ref"], 1, true);
-  } else {
+  } else if (sourcePath) {
     setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], [sourcePath], true);
     setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], "KI", true);
+  } else {
+    // Nothing is being edited, so the checkpoint runs as plain text-to-image and
+    // any reference is a person or object rather than the scene.
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mode"], 1, true);
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_guide"], null);
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mask"], null);
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_prompt_type"], "", true);
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], referencePaths, true);
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], referencePaths.length ? REFERENCE_SUBJECTS_ONLY : "", true);
+    if (referencePaths.length) {
+      setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs_relative_size"], 50, true);
+      setDiscoveredSetting(settings, schema, defaults, modelType, ["remove_background_images_ref"], 1, true);
+    }
   }
   setDiscoveredSetting(settings, schema, defaults, modelType, ["num_inference_steps", "steps"], request.faceSwap ? FACE_SWAP_STEPS : request.steps, true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["guidance_scale", "cfg_scale"], request.guidanceScale, request.guidanceScale !== undefined);

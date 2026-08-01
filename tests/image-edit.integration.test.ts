@@ -55,6 +55,32 @@ describe("image editing", () => {
     expect(client.getLastSubmissionForTests()?.settings.resolution).toBe("1088x1920");
   });
 
+  it("accepts the Krea 2 edit fallback resolutions the form offers", async () => {
+    // WanGP publishes `resolutions_categories: ["<=2k"]` for krea2 instead of a
+    // list, so without the shared fallback the only accepted value would be the
+    // model's own saved default.
+    class Krea2EditResolutionFallbackClient extends FakeWanGpClient {
+      override async getModelSchema(modelType: string) {
+        const schema = await super.getModelSchema(modelType);
+        if (modelType !== "krea2_turbo_edit_fixture") return schema;
+        const modelDefinition = { ...schema.model_def as Record<string, unknown> };
+        delete modelDefinition.resolutions;
+        const fallbackSchema: Record<string, unknown> = { ...schema, model_def: modelDefinition };
+        delete fallbackSchema.resolutions;
+        return fallbackSchema;
+      }
+      override async getDefaultSettings(modelType: string) {
+        return { ...await super.getDefaultSettings(modelType), resolution: "1920x1088" };
+      }
+    }
+    const client = new Krea2EditResolutionFallbackClient();
+    setWanGpClientForTests(client);
+    await editImage({ referenceUploadIds: [], referenceAssetIds: [], faceSwap: false, sharpenUnblur: false, prompt: "A fox in fresh snow", negativePrompt: "blurry", modelKey: "krea-2-edit", resolution: "2048x1152", steps: 8, loras: [], advanced: {} });
+    const deadline = Date.now() + 1000;
+    while (!client.getLastSubmissionForTests() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(client.getLastSubmissionForTests()?.settings.resolution).toBe("2048x1152");
+  });
+
   it("submits a Qwen face swap with separate base and reference images", async () => {
     const client = new FakeWanGpClient(); setWanGpClientForTests(client);
     const baseBuffer = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#e3482d" } }).png().toBuffer();
@@ -78,6 +104,32 @@ describe("image editing", () => {
       activated_loras: FACE_SWAP_LORAS.map((lora) => lora.name),
       loras_multipliers: "0.8 0.5",
     });
+  });
+
+  it("renders from the prompt alone when the source image is skipped", async () => {
+    const client = new FakeWanGpClient(); setWanGpClientForTests(client);
+    await editImage({ referenceUploadIds: [], referenceAssetIds: [], faceSwap: false, sharpenUnblur: false, prompt: "A fox in fresh snow", negativePrompt: "blurry", modelKey: "qwen-image-edit", steps: 20, loras: [], advanced: {} });
+    const deadline = Date.now() + 1000;
+    while (!client.getLastSubmissionForTests() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(client.getLastSubmissionForTests()?.settings).toMatchObject({ prompt: "A fox in fresh snow", image_mode: 1, image_guide: null, image_refs: [], image_prompt_type: "", video_prompt_type: "" });
+  });
+
+  it("keeps references as subjects when the source image is skipped", async () => {
+    const client = new FakeWanGpClient(); setWanGpClientForTests(client);
+    const buffer = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#146c63" } }).png().toBuffer();
+    const reference = await storeImageUpload(buffer, await validateImageBuffer(buffer));
+    await editImage({ referenceUploadIds: [reference.id], referenceAssetIds: [], faceSwap: false, sharpenUnblur: false, prompt: "Put her on a beach", negativePrompt: "blurry", modelKey: "krea-2-edit", steps: 8, loras: [], advanced: {} });
+    const deadline = Date.now() + 1000;
+    while (!client.getLastSubmissionForTests() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(client.getLastSubmissionForTests()?.settings).toMatchObject({ image_refs: [reference.path], video_prompt_type: "I", remove_background_images_ref: 1 });
+  });
+
+  it("rejects a skipped source on a model that cannot render from text", async () => {
+    class ImageOnlyClient extends FakeWanGpClient {
+      override async getModelMetadata(modelType: string) { return { ...await super.getModelMetadata(modelType), capabilities: [] }; }
+    }
+    setWanGpClientForTests(new ImageOnlyClient());
+    await expect(editImage({ referenceUploadIds: [], referenceAssetIds: [], faceSwap: false, sharpenUnblur: false, prompt: "A fox in fresh snow", negativePrompt: "blurry", modelKey: "qwen-image-edit", steps: 20, loras: [], advanced: {} })).rejects.toThrow(/requires a source image/);
   });
 
   it("submits the exclusive Qwen Sharpen and Unblur LoRA at strength 1", async () => {

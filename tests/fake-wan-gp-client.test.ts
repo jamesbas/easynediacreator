@@ -4,7 +4,7 @@ import { FakeWanGpClient } from "@/lib/wan-gp/fake-client";
 describe("FakeWanGpClient", () => {
   it("offers deterministic image and video discovery", async () => {
     const client = new FakeWanGpClient();
-    expect((await client.listModels("image")).map((model) => model.name)).toEqual(["Qwen Image", "Qwen Image Edit", "Flux.2 Klein 9B"]);
+    expect((await client.listModels("image")).map((model) => model.name)).toEqual(["Qwen Image", "Qwen Image Edit", "Flux.2 Klein 9B", "Krea 2 RAW", "Krea 2 Turbo", "Krea 2 RAW Identity Edit v1.2", "Krea 2 Turbo Identity Edit v1.2"]);
     const videos = await client.listModels("video");
     expect(videos).toHaveLength(1);
     await expect(client.getModelSchema(videos[0].modelType)).resolves.toMatchObject({ supportsEndFrame: true });

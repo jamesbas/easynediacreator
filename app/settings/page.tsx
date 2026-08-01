@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { RefreshModelsButton } from "@/components/settings/refresh-models-button";
 import { ModelSelectionControl } from "@/components/settings/model-selection-control";
 import { CharacterPromptSetting } from "@/components/settings/character-prompt-setting";
+import { CharacterReferenceImages } from "@/components/settings/character-reference-images";
 import { config } from "@/lib/config";
 import { getAppPreferences } from "@/lib/runtime/app-preferences";
 import { getModels } from "@/lib/runtime/model-cache";
@@ -34,6 +35,7 @@ export default async function SettingsPage() {
       <section className="mt-8">
         <h2 className="mb-3 text-lg font-bold">Prompt defaults</h2>
         <CharacterPromptSetting initialCharacterPrompt={preferences.characterPrompt} />
+        <CharacterReferenceImages initialReferences={preferences.characterReferences} />
       </section>
       <section className="mt-8">
         <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-bold">Approved models</h2><span className="font-mono text-xs text-[var(--muted)]">{models.length} workflow mappings</span></div>

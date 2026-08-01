@@ -47,6 +47,10 @@ export type ModelOption = {
   schema: Record<string, unknown>;
   defaults: Record<string, unknown>;
   capabilities: string[];
+  /** Reference images this model accepts. Absent means it accepts none. */
+  maxReferenceImages?: number;
+  /** True when the image being edited is sent as a reference and so uses one of those slots. */
+  sourceUsesReferenceSlot?: boolean;
   loraCatalog: LoraCatalog;
   candidates: ModelCandidate[];
 };

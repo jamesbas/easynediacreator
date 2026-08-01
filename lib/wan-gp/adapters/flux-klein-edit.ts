@@ -1,13 +1,13 @@
 import type { ImageEditRequest } from "@/lib/requests";
 import { applyLoraSettings, applySamplingSettings, setDiscoveredSetting } from "../settings-builder";
 
-export function buildFluxKleinEditSettings(request: ImageEditRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string, sourcePath: string) {
+export function buildFluxKleinEditSettings(request: ImageEditRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string, sourcePath?: string) {
   if (Object.keys(request.advanced).length) throw new Error("The selected model does not allow these advanced settings.");
   const settings = { ...defaults };
   setDiscoveredSetting(settings, schema, defaults, modelType, ["prompt", "text_prompt", "instruction"], request.prompt, true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["negative_prompt"], request.negativePrompt, true);
-  setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], [sourcePath], true);
-  setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], "KI", true);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], sourcePath ? [sourcePath] : [], true);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], sourcePath ? "KI" : "", true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["num_inference_steps", "steps"], request.steps, true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["guidance_scale", "cfg_scale"], request.guidanceScale, request.guidanceScale !== undefined);
   applySamplingSettings(settings, schema, defaults, modelType, request);

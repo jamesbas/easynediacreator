@@ -4,8 +4,9 @@ import { config } from "@/lib/config";
 import { getModels } from "@/lib/runtime/model-cache";
 import { getAppPreferences } from "@/lib/runtime/app-preferences";
 import { getJob } from "@/lib/runtime/job-registry";
+import { listOutputs, publicAsset } from "@/lib/runtime/output-registry";
 import { FLUX_KLEIN_IMAGE_PRESET, getImageFallbackResolutions } from "@/lib/wan-gp/image-presets";
-import { hasGuidanceOneMarker } from "@/lib/wan-gp/image-guidance";
+import { lockedGuidanceScale } from "@/lib/wan-gp/image-guidance";
 import { getGenerationControls } from "@/lib/wan-gp/generation-controls";
 
 export const dynamic = "force-dynamic";
@@ -23,12 +24,14 @@ export default async function CreateImagePage({ searchParams }: { searchParams: 
       availability: model.availability,
       reason: model.reason,
       controls,
-      guidanceLocked: model.key === "qwen-image" && hasGuidanceOneMarker(model.modelType, model.displayName, model.defaults.type, model.defaults.sample_solver, model.defaults.activated_loras),
+      lockedGuidance: lockedGuidanceScale(model.key, model.modelType, model.displayName, model.defaults.type, model.defaults.sample_solver, model.defaults.activated_loras),
+      maxReferenceImages: model.maxReferenceImages,
       loraCatalog: model.loraCatalog,
     };
   });
+  const assets = listOutputs().filter((asset) => asset.type === "image").map(publicAsset).map(({ id, filename, contentUrl }) => ({ id, filename, contentUrl }));
   const { fromJob } = await searchParams;
   const snapshot = fromJob ? getJob(fromJob)?.requestSnapshot : undefined;
   const initialRequest = snapshot?.workflowType === "image-create" ? snapshot.request : undefined;
-  return <><PageHeader eyebrow="Image Studio" title="Create an image" description="Shape a new image from your prompt using an approved local model." /><ImageCreateForm models={models} defaultModel={config.DEFAULT_IMAGE_CREATE_MODEL} characterPrompt={preferences.characterPrompt} initialRequest={initialRequest} /></>;
+  return <><PageHeader eyebrow="Image Studio" title="Create an image" description="Shape a new image from your prompt using an approved local model." /><ImageCreateForm models={models} assets={assets} characterReferences={preferences.characterReferences} defaultModel={config.DEFAULT_IMAGE_CREATE_MODEL} characterPrompt={preferences.characterPrompt} initialRequest={initialRequest} /></>;
 }
