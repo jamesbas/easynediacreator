@@ -3,8 +3,14 @@ import path from "node:path";
 import { z } from "zod";
 import { DEFAULT_CHARACTER_PROMPT, MAX_CHARACTER_REFERENCES } from "@/lib/character-prompt";
 import { config } from "@/lib/config";
+import { loraSelectionSchema } from "@/lib/requests";
 
 export const characterPromptSchema = z.string().max(4000, "Character prompt must be 4,000 characters or fewer.");
+
+/** Default LoRAs are keyed by `${workflowType}:${modelKey}`, the same key the model selections use. */
+export const MAX_DEFAULT_LORAS = 8;
+export const defaultLoraSelectionKeySchema = z.string().min(1).max(100);
+export const defaultLorasSchema = z.record(defaultLoraSelectionKeySchema, z.array(loraSelectionSchema).max(MAX_DEFAULT_LORAS));
 
 export const characterReferenceSchema = z.object({
   id: z.string().uuid(),
@@ -17,6 +23,7 @@ export const characterReferenceSchema = z.object({
 export const appPreferencesSchema = z.object({
   characterPrompt: characterPromptSchema.default(DEFAULT_CHARACTER_PROMPT),
   characterReferences: z.array(characterReferenceSchema).max(MAX_CHARACTER_REFERENCES).default([]),
+  defaultLoras: defaultLorasSchema.default({}),
 });
 
 export type CharacterReference = z.infer<typeof characterReferenceSchema>;

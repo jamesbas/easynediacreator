@@ -2,6 +2,7 @@ import { CheckCircle2, CircleAlert, CircleX } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { RefreshModelsButton } from "@/components/settings/refresh-models-button";
 import { ModelSelectionControl } from "@/components/settings/model-selection-control";
+import { DefaultLoraSetting } from "@/components/settings/default-lora-setting";
 import { CharacterPromptSetting } from "@/components/settings/character-prompt-setting";
 import { CharacterReferenceImages } from "@/components/settings/character-reference-images";
 import { config } from "@/lib/config";
@@ -40,7 +41,7 @@ export default async function SettingsPage() {
       <section className="mt-8">
         <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-bold">Approved models</h2><span className="font-mono text-xs text-[var(--muted)]">{models.length} workflow mappings</span></div>
         <div className="divide-y divide-[var(--line)] border border-[var(--line)] bg-[var(--surface)]">
-          {models.length ? models.map((model) => <ModelRow key={`${model.workflowType}-${model.key}`} model={model} />) : <p className="p-5 text-sm text-[var(--muted)]">Model discovery is unavailable. Confirm that WanGP MCP is running locally.</p>}
+          {models.length ? models.map((model) => <ModelRow key={`${model.workflowType}-${model.key}`} model={model} defaultLoras={preferences.defaultLoras[`${model.workflowType}:${model.key}`] ?? []} />) : <p className="p-5 text-sm text-[var(--muted)]">Model discovery is unavailable. Confirm that WanGP MCP is running locally.</p>}
         </div>
       </section>
       <section className="mt-8 border-l-4 border-[var(--teal)] bg-[#e6f1ee] p-5"><h2 className="font-bold">Local processing</h2><p className="mt-1 text-sm leading-6 text-[var(--muted)]">Powered by WanGP by DeepBeepMeep. Prompts and media are processed by your locally hosted WanGP installation and outputs remain in its configured local folder.</p></section>
@@ -52,8 +53,8 @@ function StatusCell({ label, value, tone }: { label: string; value: string; tone
   return <div className="bg-[var(--surface)] p-5"><p className="font-mono text-[0.68rem] uppercase text-[var(--muted)]">{label}</p><p className={`mt-2 font-bold ${tone === "good" ? "text-[var(--teal)]" : tone === "bad" ? "text-[var(--accent)]" : ""}`}>{value}</p></div>;
 }
 
-function ModelRow({ model }: { model: Awaited<ReturnType<typeof getModels>>[number] }) {
+function ModelRow({ model, defaultLoras }: { model: Awaited<ReturnType<typeof getModels>>[number]; defaultLoras: { name: string; strength: number }[] }) {
   const Icon = model.availability === "available" ? CheckCircle2 : model.availability === "partial" ? CircleAlert : CircleX;
   const color = model.availability === "available" ? "text-[var(--teal)]" : model.availability === "partial" ? "text-[#9b7100]" : "text-[var(--accent)]";
-  return <div className="flex items-start gap-4 p-4"><Icon aria-hidden="true" className={`mt-0.5 shrink-0 ${color}`} size={20} /><div className="min-w-0 flex-1"><p className="font-bold">{model.displayName}</p><p className="mt-1 font-mono text-[0.68rem] text-[var(--muted)]">{model.modelType ?? "No model selected"}</p><p className="mt-1 text-xs text-[var(--muted)]">{model.workflowType.replaceAll("-", " ")}{model.reason ? `: ${model.reason}` : ""}</p>{model.candidates.length > 0 && <ModelSelectionControl selectionKey={`${model.workflowType}:${model.key}`} modelType={model.modelType} candidates={model.candidates} />}</div><span className={`font-mono text-[0.68rem] uppercase ${color}`}>{model.availability}</span></div>;
+  return <div className="flex items-start gap-4 p-4"><Icon aria-hidden="true" className={`mt-0.5 shrink-0 ${color}`} size={20} /><div className="min-w-0 flex-1"><p className="font-bold">{model.displayName}</p><p className="mt-1 font-mono text-[0.68rem] text-[var(--muted)]">{model.modelType ?? "No model selected"}</p><p className="mt-1 text-xs text-[var(--muted)]">{model.workflowType.replaceAll("-", " ")}{model.reason ? `: ${model.reason}` : ""}</p>{model.candidates.length > 0 && <ModelSelectionControl selectionKey={`${model.workflowType}:${model.key}`} modelType={model.modelType} candidates={model.candidates} />}<DefaultLoraSetting selectionKey={`${model.workflowType}:${model.key}`} catalog={model.loraCatalog} initialLoras={defaultLoras} /></div><span className={`font-mono text-[0.68rem] uppercase ${color}`}>{model.availability}</span></div>;
 }

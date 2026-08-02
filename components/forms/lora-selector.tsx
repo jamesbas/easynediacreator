@@ -6,6 +6,13 @@ import type { LoraAccelerationPreset, LoraCatalog } from "@/lib/types";
 
 type Row = { id: number; name: string; strength: number };
 
+/** LoRAs that can be picked by hand: everything an acceleration preset already owns is promoted out of the list. */
+export function selectableLoraItems(catalog: LoraCatalog) {
+  const promoted = new Set((catalog.accelerationPresets ?? []).flatMap((preset) => preset.loras.map((lora) => lora.filename.toLocaleLowerCase())));
+  return catalog.items?.filter((item) => !promoted.has(item.filename.toLocaleLowerCase()))
+    ?? catalog.loras.filter((name) => !promoted.has(name.toLocaleLowerCase())).map((filename) => ({ filename, purpose: "unclassified" as const, confidence: "low" as const, compatible: true, evidence: [] }));
+}
+
 export function LoraSelector({ catalog, initialLoras = [], initialPresetId, onSelectionChange, onPresetChange }: { catalog: LoraCatalog; initialLoras?: { name: string; strength: number }[]; initialPresetId?: string; onSelectionChange?: (loras: { name: string; strength: number }[]) => void; onPresetChange?: (preset?: LoraAccelerationPreset) => void }) {
   const availableLoras = new Set(catalog.loras.map((name) => name.toLocaleLowerCase()));
   const availablePresets = new Set((catalog.accelerationPresets ?? []).map((preset) => preset.id));
@@ -18,8 +25,7 @@ export function LoraSelector({ catalog, initialLoras = [], initialPresetId, onSe
   if (!catalog.supported) return <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">LoRAs</p><p className="mt-1 text-xs leading-5 text-[var(--muted)]">{catalog.reason ?? "LoRA discovery is unavailable for this model."}</p></div>;
   if (!catalog.loras.length) return <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">LoRAs</p><p className="mt-1 text-xs leading-5 text-[var(--muted)]">No compatible LoRAs were returned for this model.</p></div>;
   const presets = catalog.accelerationPresets ?? [];
-  const promoted = new Set(presets.flatMap((preset) => preset.loras.map((lora) => lora.filename.toLocaleLowerCase())));
-  const otherItems = catalog.items?.filter((item) => !promoted.has(item.filename.toLocaleLowerCase())) ?? catalog.loras.filter((name) => !promoted.has(name.toLocaleLowerCase())).map((filename) => ({ filename, purpose: "unclassified" as const, confidence: "low" as const, compatible: true, evidence: [] }));
+  const otherItems = selectableLoraItems(catalog);
   const otherLoras = otherItems.map((item) => item.filename);
   const selectedPreset = presets.find((preset) => preset.id === presetId);
   const selectedPresetSource = selectedPreset?.source === "mcp" ? "Provided by WanGP" : selectedPreset?.source === "user-override" ? "User override" : "Matched WanGP profile";

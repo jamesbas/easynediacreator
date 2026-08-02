@@ -14,9 +14,9 @@ const rules: LogicalRule[] = [
   { key: "krea-2", displayName: "Krea 2", workflowType: "image-create", family: "krea2", output: "image", namePattern: /krea(?!.*edit)/i, preferredPatterns: [/turbo/i] },
   { key: "qwen-image-edit", displayName: "Qwen Image Edit", workflowType: "image-edit", family: "qwen", output: "image", requiresImage: true, namePattern: /qwen.*edit/i, maxReferenceImages: 8 },
   { key: "flux-klein-9b", displayName: "Flux.2 Klein 9B", workflowType: "image-edit", family: "flux", output: "image", requiresImage: true, namePattern: /klein.*9b/i },
-  // Krea 2 Identity Edit caps `image_refs` at two entries in total, and the
-  // image being edited occupies the first when one is supplied.
-  { key: "krea-2-edit", displayName: "Krea 2 Identity Edit", workflowType: "image-edit", family: "krea2", output: "image", namePattern: /krea.*edit/i, preferredPatterns: [/turbo/i], maxReferenceImages: 2, sourceUsesReferenceSlot: true },
+  // Krea 2 Identity Edit conditions on three `image_refs` entries in total, and
+  // the image being edited occupies the first when one is supplied.
+  { key: "krea-2-edit", displayName: "Krea 2 Identity Edit", workflowType: "image-edit", family: "krea2", output: "image", namePattern: /krea.*edit/i, preferredPatterns: [/turbo/i], maxReferenceImages: 3, sourceUsesReferenceSlot: true },
   { key: "ltx-2", displayName: "LTX-2", workflowType: "video-create", family: "ltx2", output: "video", requiresImage: true, namePattern: /ltx.?2/i, preferredPatterns: [/distilled.*1\.1/i, /distilled/i] },
 ];
 

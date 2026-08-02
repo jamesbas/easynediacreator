@@ -241,6 +241,23 @@ test("inserts the default character into an existing image prompt", async ({ pag
   await expect(prompt).toHaveValue(`Standing at the beach at sunset. ${savedCharacterPrompt}`);
 });
 
+test("inserts the default character into the edit and video prompts", async ({ page }) => {
+  const settings = await (await page.request.get("/api/settings")).json();
+  const savedCharacterPrompt = String(settings.preferences.characterPrompt);
+
+  await page.goto("/edit-image");
+  const editPrompt = page.getByLabel("Edit prompt");
+  await editPrompt.fill("Keep the pose.");
+  await page.getByRole("button", { name: "Insert character" }).click();
+  await expect(editPrompt).toHaveValue(`Keep the pose. ${savedCharacterPrompt}`);
+
+  await page.goto("/create-video");
+  const videoPrompt = page.getByLabel("Video prompt");
+  await videoPrompt.fill("She walks toward the camera.");
+  await page.getByRole("button", { name: "Insert character" }).click();
+  await expect(videoPrompt).toHaveValue(`She walks toward the camera. ${savedCharacterPrompt}`);
+});
+
 test("saves an edited default character prompt", async ({ page }) => {
   const customPrompt = "A recurring character with silver hair and green eyes.";
   let submitted: Record<string, unknown> | undefined;

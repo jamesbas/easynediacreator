@@ -3,10 +3,11 @@
 import { Clapperboard, ImagePlus } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { DEFAULT_NEGATIVE_PROMPT, type VideoCreateRequest } from "@/lib/requests";
 import type { LoraCatalog } from "@/lib/types";
 import type { GenerationControls } from "@/lib/wan-gp/generation-controls";
+import { InsertCharacterButton } from "./insert-character-button";
 import { LoraSelector, readLoraSelections } from "./lora-selector";
 
 type FormModel = {
@@ -17,15 +18,18 @@ type FormModel = {
   defaultSourceStrength: number;
   supportsEndFrame: boolean;
   loraCatalog: LoraCatalog;
+  defaultLoras: { name: string; strength: number }[];
 };
 type AssetOption = { id: string; filename: string; contentUrl: string };
 type PickedImage = { file?: File; uploadId?: string; assetId?: string; preview?: string };
 
-export function VideoCreateForm({ models, assets, defaultModel, initialStartId, initialRequest }: { models: FormModel[]; assets: AssetOption[]; defaultModel: string; initialStartId?: string; initialRequest?: VideoCreateRequest }) {
+export function VideoCreateForm({ models, assets, defaultModel, characterPrompt, initialStartId, initialRequest }: { models: FormModel[]; assets: AssetOption[]; defaultModel: string; characterPrompt: string; initialStartId?: string; initialRequest?: VideoCreateRequest }) {
   const router = useRouter();
+  const promptRef = useRef<HTMLTextAreaElement>(null);
   const reusableModel = models.find((model) => model.key === initialRequest?.modelKey && model.availability === "available");
   const [modelKey, setModelKey] = useState(reusableModel?.key ?? models.find((model) => model.key === defaultModel && model.availability === "available")?.key ?? models.find((model) => model.availability === "available")?.key ?? "");
   const selected = models.find((model) => model.key === modelKey);
+  const [prompt, setPrompt] = useState(initialRequest?.prompt ?? "");
   const [start, setStart] = useState<PickedImage>({ uploadId: initialRequest?.startUploadId, assetId: initialRequest?.startAssetId ?? initialStartId });
   const [end, setEnd] = useState<PickedImage>({ uploadId: initialRequest?.endUploadId, assetId: initialRequest?.endAssetId });
   const [error, setError] = useState(initialRequest && !reusableModel ? "The saved model is no longer available. Choose another model before submitting." : "");
@@ -92,8 +96,8 @@ export function VideoCreateForm({ models, assets, defaultModel, initialStartId, 
         <ImagePicker label="End image" value={end} onChange={setEnd} assets={assets} disabled={!selected?.supportsEndFrame} />
       </section>
       <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
-        <label htmlFor="video-prompt" className="mb-2 block text-sm font-bold">Video prompt</label>
-        <textarea id="video-prompt" name="prompt" required rows={7} maxLength={4000} defaultValue={initialRequest?.prompt} placeholder="Describe motion, camera movement, pacing, and what changes in the scene..." className="w-full rounded-md border border-[#b8beb7] bg-white p-4 leading-7 outline-none focus:border-[var(--teal)]" />
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="video-prompt" className="block text-sm font-bold">Video prompt</label><InsertCharacterButton characterPrompt={characterPrompt} prompt={prompt} textarea={promptRef} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></div>
+        <textarea ref={promptRef} id="video-prompt" name="prompt" required rows={7} maxLength={4000} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe motion, camera movement, pacing, and what changes in the scene..." className="w-full rounded-md border border-[#b8beb7] bg-white p-4 leading-7 outline-none focus:border-[var(--teal)]" />
         <label htmlFor="video-negative-prompt" className="mb-2 mt-5 block text-sm font-bold">Negative prompt</label>
         <textarea id="video-negative-prompt" name="negativePrompt" rows={4} maxLength={4000} defaultValue={initialRequest?.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT} className="w-full rounded-md border border-[#b8beb7] bg-white p-4 text-sm leading-6 outline-none focus:border-[var(--teal)]" />
         {error && <p role="alert" className="mt-3 text-sm font-semibold text-[var(--accent)]">{error}</p>}
@@ -106,7 +110,7 @@ export function VideoCreateForm({ models, assets, defaultModel, initialStartId, 
       <label className="block"><span className="mb-2 flex items-center justify-between gap-3 text-sm font-bold"><span>Start image / source strength</span><output htmlFor="source-strength">{sourceStrength.toFixed(2)}</output></span><input id="source-strength" aria-label="Start image / source strength" className="w-full accent-[var(--teal)]" name="sourceStrength" type="range" min="0" max="1" step="0.05" value={sourceStrength} onChange={(event) => setSourceStrength(Number(event.target.value))} /></label>
       <Control label="Steps"><input className="control" name="steps" type="number" min={selected?.controls.steps.min ?? 1} max={selected?.controls.steps.max ?? 200} step={selected?.controls.steps.step ?? 1} value={steps} onChange={(event) => setSteps(Number(event.target.value))} required /></Control>
       {selected?.controls.guidance && guidanceScale !== undefined ? <Control label="Guidance (CFG)"><input className="control" name="guidanceScale" type="number" min={selected.controls.guidance.min} max={selected.controls.guidance.max} step={selected.controls.guidance.step} value={guidanceScale} onChange={(event) => setGuidanceScale(Number(event.target.value))} required /></Control> : null}
-      <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} initialLoras={reuseSelections ? initialRequest?.loras : undefined} initialPresetId={reuseSelections ? initialRequest?.loraPresetId : undefined} />
+      <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} initialLoras={reuseSelections ? initialRequest?.loras : selected?.defaultLoras} initialPresetId={reuseSelections ? initialRequest?.loraPresetId : undefined} />
       <details className="border-t border-[var(--line)] pt-4"><summary className="cursor-pointer text-sm font-bold">Advanced</summary><div className="mt-4 space-y-4">
         {selected?.controls.fps ? <Control label="Frames per second"><input className="control" name="fps" type="number" min={selected.controls.fps.min} max={selected.controls.fps.max} step={selected.controls.fps.step} value={fps} onChange={(event) => setFps(Number(event.target.value))} required /></Control> : null}
         {selected?.controls.solvers.length ? <Control label="Solver"><select className="control" value={sampleSolver} onChange={(event) => setSampleSolver(event.target.value)}><option value="">Model default</option>{selected.controls.solvers.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></Control> : null}

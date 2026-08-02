@@ -39,7 +39,7 @@ describe("Krea 2", () => {
 
     const edit = models.find((model) => model.workflowType === "image-edit" && model.key === "krea-2-edit");
     expect(edit?.modelType).toBe("krea2_turbo_edit_fixture");
-    expect(edit?.maxReferenceImages).toBe(2);
+    expect(edit?.maxReferenceImages).toBe(3);
     expect(edit?.sourceUsesReferenceSlot).toBe(true);
   });
 
@@ -104,13 +104,19 @@ describe("Krea 2", () => {
   });
 
   it("refuses more references than the Identity Edit checkpoint conditions on", async () => {
-    const [source, ...references] = await Promise.all([uploadFixture(), uploadFixture(), uploadFixture()]);
+    const [source, ...references] = await Promise.all([uploadFixture(), uploadFixture(), uploadFixture(), uploadFixture()]);
     await expect(editImage({ prompt: "Recolour", negativePrompt: "", modelKey: "krea-2-edit", steps: 8, loras: [], advanced: {}, sourceUploadId: source.id, faceSwap: false, sharpenUnblur: false, referenceUploadIds: references.map((reference) => reference.id) }))
-      .rejects.toThrow(/at most 1 reference image alongside the image being edited\./);
+      .rejects.toThrow(/at most 2 reference images alongside the image being edited\./);
   });
 
-  it("frees the second reference slot when no image is being edited", async () => {
-    const references = await Promise.all([uploadFixture(), uploadFixture()]);
+  it("keeps two reference slots alongside the image being edited", async () => {
+    const [source, ...references] = await Promise.all([uploadFixture(), uploadFixture(), uploadFixture()]);
+    await expect(editImage({ prompt: "Recolour", negativePrompt: "", modelKey: "krea-2-edit", steps: 8, loras: [], advanced: {}, sourceUploadId: source.id, faceSwap: false, sharpenUnblur: false, referenceUploadIds: references.map((reference) => reference.id) }))
+      .resolves.toMatchObject({ workflowType: "image-edit" });
+  });
+
+  it("frees the last reference slot when no image is being edited", async () => {
+    const references = await Promise.all([uploadFixture(), uploadFixture(), uploadFixture()]);
     await expect(editImage({ prompt: "Put them on a beach", negativePrompt: "", modelKey: "krea-2-edit", steps: 8, loras: [], advanced: {}, faceSwap: false, sharpenUnblur: false, referenceUploadIds: references.map((reference) => reference.id) }))
       .resolves.toMatchObject({ workflowType: "image-edit" });
   });

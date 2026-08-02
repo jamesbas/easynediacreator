@@ -27,6 +27,7 @@ export default async function CreateImagePage({ searchParams }: { searchParams: 
       lockedGuidance: lockedGuidanceScale(model.key, model.modelType, model.displayName, model.defaults.type, model.defaults.sample_solver, model.defaults.activated_loras),
       maxReferenceImages: model.maxReferenceImages,
       loraCatalog: model.loraCatalog,
+      defaultLoras: preferences.defaultLoras[`image-create:${model.key}`] ?? [],
     };
   });
   const assets = listOutputs().filter((asset) => asset.type === "image").map(publicAsset).map(({ id, filename, contentUrl }) => ({ id, filename, contentUrl }));
