@@ -39,6 +39,7 @@ export function ReferenceImagePicker({ assets, characterReferences, selection, o
 }) {
   const previewUrls = useRef(new Set<string>());
   const [error, setError] = useState("");
+  const [outputsOpen, setOutputsOpen] = useState(selection.assetIds.length > 0);
   const count = countReferenceSelection(selection, characterReferences);
   const disabled = Boolean(disabledReason);
 
@@ -101,15 +102,17 @@ export function ReferenceImagePicker({ assets, characterReferences, selection, o
     </div>}
 
     {assets.length > 0 && <fieldset className="mt-4" disabled={disabled}>
-      <legend className="text-sm font-bold">Or use image outputs</legend>
-      <div className="mt-2 grid gap-2 sm:grid-cols-2">{assets.map((asset) => {
-        const checked = selection.assetIds.includes(asset.id);
-        return <label key={asset.id} className="flex min-w-0 items-center gap-3 border border-[var(--line)] bg-white p-2 text-xs">
-          <input type="checkbox" checked={checked} disabled={!checked && count >= limit} onChange={(event) => onChange({ ...selection, assetIds: event.target.checked ? [...selection.assetIds, asset.id] : selection.assetIds.filter((id) => id !== asset.id) })} />
-          <span className="relative size-10 shrink-0 overflow-hidden bg-[#f6f4ee]"><Image src={asset.contentUrl} alt="" fill sizes="40px" className="object-cover" unoptimized /></span>
-          <span className="truncate">{asset.filename}</span>
-        </label>;
-      })}</div>
+      <details open={outputsOpen} onToggle={(event) => setOutputsOpen(event.currentTarget.open)} className="border border-[var(--line)] bg-white">
+        <summary className="cursor-pointer p-3 text-sm font-bold">Or use image outputs <span className="text-xs font-normal text-[var(--muted)]">({selection.assetIds.length ? `${selection.assetIds.length} selected of ${assets.length}` : `${assets.length} available`})</span></summary>
+        <div className="grid max-h-80 gap-2 overflow-y-auto border-t border-[var(--line)] p-3 sm:grid-cols-2">{assets.map((asset) => {
+          const checked = selection.assetIds.includes(asset.id);
+          return <label key={asset.id} className="flex min-w-0 items-center gap-3 border border-[var(--line)] bg-white p-2 text-xs">
+            <input type="checkbox" checked={checked} disabled={!checked && count >= limit} onChange={(event) => onChange({ ...selection, assetIds: event.target.checked ? [...selection.assetIds, asset.id] : selection.assetIds.filter((id) => id !== asset.id) })} />
+            <span className="relative size-10 shrink-0 overflow-hidden bg-[#f6f4ee]"><Image src={asset.contentUrl} alt="" fill sizes="40px" className="object-cover" unoptimized /></span>
+            <span className="truncate">{asset.filename}</span>
+          </label>;
+        })}</div>
+      </details>
     </fieldset>}
 
     {disabledReason && <p className="mt-3 text-xs leading-5 text-[var(--muted)]">{disabledReason}</p>}
