@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import { Readable } from "node:stream";
-import { characterReferencePath, listCharacterReferences } from "@/lib/character-references/storage";
+import { characterReferencePath, listCharacterReferences } from "@/lib/characters/storage";
 
 export const runtime = "nodejs";
 

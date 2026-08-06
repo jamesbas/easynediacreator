@@ -8,7 +8,7 @@ import { resetUploadsForTests, storeImageUpload } from "@/lib/uploads/storage";
 import { validateImageBuffer } from "@/lib/uploads/validate-image";
 import { FakeWanGpClient } from "@/lib/wan-gp/fake-client";
 import { setWanGpClientForTests } from "@/lib/wan-gp";
-import { FACE_SWAP_LORAS, FACE_SWAP_PROMPT } from "@/lib/face-swap-preset";
+import { FACE_SWAP_LORAS, FACE_SWAP_PROMPT, faceSwapPrompt } from "@/lib/face-swap-preset";
 import { SHARPEN_UNBLUR_LORA } from "@/lib/sharpen-unblur-preset";
 
 describe("image editing", () => {
@@ -104,6 +104,21 @@ describe("image editing", () => {
       activated_loras: FACE_SWAP_LORAS.map((lora) => lora.name),
       loras_multipliers: "0.8 0.5",
     });
+  });
+
+  it("swaps the subject noun in the face-swap prompt for a male character", async () => {
+    const client = new FakeWanGpClient(); setWanGpClientForTests(client);
+    const baseBuffer = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#2d5be3" } }).png().toBuffer();
+    const referenceBuffer = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#63146c" } }).png().toBuffer();
+    const source = await storeImageUpload(baseBuffer, await validateImageBuffer(baseBuffer));
+    const reference = await storeImageUpload(referenceBuffer, await validateImageBuffer(referenceBuffer));
+    await editImage({ sourceUploadId: source.id, referenceUploadIds: [reference.id], referenceAssetIds: [], faceSwap: true, faceSwapGender: "male", sharpenUnblur: false, prompt: "replaced server-side", negativePrompt: "blurry", modelKey: "qwen-image-edit", steps: 20, loras: [], advanced: {} });
+    const deadline = Date.now() + 1000;
+    while (!client.getLastSubmissionForTests() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+    const prompt = String((client.getLastSubmissionForTests()?.settings as Record<string, unknown>).prompt);
+    expect(prompt).toBe(faceSwapPrompt("male"));
+    expect(prompt).toContain("replace it with the head of the white man from Picture 2");
+    expect(prompt).not.toContain("woman");
   });
 
   it("renders from the prompt alone when the source image is skipped", async () => {

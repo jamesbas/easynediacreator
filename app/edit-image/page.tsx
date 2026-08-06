@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ImageEditForm } from "@/components/forms/image-edit-form";
 import { config } from "@/lib/config";
 import { getModels } from "@/lib/runtime/model-cache";
-import { getAppPreferences } from "@/lib/runtime/app-preferences";
+import { getAppPreferences, characterSummaries } from "@/lib/runtime/app-preferences";
 import { getJob } from "@/lib/runtime/job-registry";
 import { listOutputs, publicAsset } from "@/lib/runtime/output-registry";
 import { getGenerationControls } from "@/lib/wan-gp/generation-controls";
@@ -19,5 +19,5 @@ export default async function EditImagePage({ searchParams }: { searchParams: Pr
   const { source, fromJob } = await searchParams;
   const snapshot = fromJob ? getJob(fromJob)?.requestSnapshot : undefined;
   const initialRequest = snapshot?.workflowType === "image-edit" ? snapshot.request : undefined;
-  return <><PageHeader eyebrow="Image Studio" title="Edit an image" description="Upload an image or choose an output, then describe the change you want." /><ImageEditForm models={models} assets={assets} characterReferences={preferences.characterReferences} defaultModel={config.DEFAULT_IMAGE_EDIT_MODEL} characterPrompt={preferences.characterPrompt} initialAssetId={assets.some((asset) => asset.id === source) ? source : undefined} initialRequest={initialRequest} /></>;
+  return <><PageHeader eyebrow="Image Studio" title="Edit an image" description="Upload an image or choose an output, then describe the change you want." /><ImageEditForm models={models} assets={assets} characters={characterSummaries(preferences.characters)} defaultModel={config.DEFAULT_IMAGE_EDIT_MODEL} initialAssetId={assets.some((asset) => asset.id === source) ? source : undefined} initialRequest={initialRequest} /></>;
 }

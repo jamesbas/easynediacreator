@@ -8,13 +8,15 @@ async function png(color: string) {
 
 test("keeps the creation workflow and bottom navigation usable on phone viewports", async ({ page }) => {
   const settings = await (await page.request.get("/api/settings")).json();
-  const savedCharacterPrompt = String(settings.preferences.characterPrompt);
+  const character = (settings.preferences.characters as { prompt: string }[]).find((candidate) => candidate.prompt.trim())!;
   await page.goto("/create-image");
   await expect(page.getByRole("heading", { name: "Create an image" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeHidden();
   await page.getByRole("button", { name: "Insert character" }).click();
-  await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(savedCharacterPrompt);
+  const item = page.getByRole("menuitem").first();
+  if (await item.count()) await item.click();
+  await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(character.prompt);
   await page.getByLabel("Acceleration preset").selectOption("fixture-qwen-lightning");
   await expect(page.getByRole("spinbutton", { name: "Steps", exact: true })).toHaveValue("4");
   await expect(page.getByLabel("Guidance (CFG)")).toHaveValue("1");

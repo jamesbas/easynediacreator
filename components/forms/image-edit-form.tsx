@@ -4,8 +4,8 @@ import { ImagePlus, Paintbrush, Sparkles, Trash2, Upload, UserRoundCheck } from 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FACE_SWAP_LORAS, FACE_SWAP_PROMPT, FACE_SWAP_STEPS } from "@/lib/face-swap-preset";
-import type { CharacterReferenceSummary } from "@/components/settings/character-reference-images";
+import { FACE_SWAP_LORAS, faceSwapPrompt, FACE_SWAP_STEPS } from "@/lib/face-swap-preset";
+import { CHARACTER_GENDERS, type CharacterGender, type CharacterSummary } from "@/lib/character-prompt";
 import { DEFAULT_NEGATIVE_PROMPT, type ImageEditRequest } from "@/lib/requests";
 import { SHARPEN_UNBLUR_LORA, SHARPEN_UNBLUR_PROMPT } from "@/lib/sharpen-unblur-preset";
 import type { LoraAccelerationPreset, LoraCatalog } from "@/lib/types";
@@ -29,7 +29,7 @@ async function uploadImage(file: File) {
   return String(result.upload.id);
 }
 
-export function ImageEditForm({ models, assets, characterReferences, defaultModel, characterPrompt, initialAssetId, initialRequest }: { models: FormModel[]; assets: AssetOption[]; characterReferences: CharacterReferenceSummary[]; defaultModel: string; characterPrompt: string; initialAssetId?: string; initialRequest?: ImageEditRequest }) {
+export function ImageEditForm({ models, assets, characters, defaultModel, initialAssetId, initialRequest }: { models: FormModel[]; assets: AssetOption[]; characters: CharacterSummary[]; defaultModel: string; initialAssetId?: string; initialRequest?: ImageEditRequest }) {
   const router = useRouter();
   const previewUrls = useRef(new Set<string>());
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -43,7 +43,9 @@ export function ImageEditForm({ models, assets, characterReferences, defaultMode
   const [referenceUploadIds, setReferenceUploadIds] = useState<string[]>(initialRequest?.referenceUploadIds ?? []);
   const [referenceAssetIds, setReferenceAssetIds] = useState<string[]>(initialRequest?.referenceAssetIds ?? []);
   const [referenceOutputsOpen, setReferenceOutputsOpen] = useState(Boolean(initialRequest?.referenceAssetIds?.length));
-  const [useCharacterReferences, setUseCharacterReferences] = useState(Boolean(initialRequest?.characterReferenceIds?.length));
+  const [characterIds, setCharacterIds] = useState<string[]>(() => characters.filter((character) => character.references.some((reference) => initialRequest?.characterReferenceIds?.includes(reference.id))).map((character) => character.id));
+  const [faceSwapReferenceId, setFaceSwapReferenceId] = useState(() => (initialRequest?.faceSwap ? initialRequest.characterReferenceIds?.[0] ?? "" : ""));
+  const [faceSwapGender, setFaceSwapGender] = useState<CharacterGender>(initialRequest?.faceSwapGender ?? "female");
   const reusableModel = models.find((model) => model.key === initialRequest?.modelKey && model.availability === "available");
   const [modelKey, setModelKey] = useState(reusableModel?.key ?? models.find((model) => model.key === defaultModel && model.availability === "available")?.key ?? models.find((model) => model.availability === "available")?.key ?? "");
   const selected = models.find((model) => model.key === modelKey);
@@ -64,7 +66,14 @@ export function ImageEditForm({ models, assets, characterReferences, defaultMode
   const referenceModels = models.filter((model) => model.availability === "available" && model.maxReferenceImages);
   const textToImageModels = models.filter((model) => model.availability === "available" && supportsTextToImage(model));
   const sharpenUnblurAvailable = Boolean(qwenModel?.loraCatalog.loras.some((name) => name.toLocaleLowerCase() === SHARPEN_UNBLUR_LORA.name.toLocaleLowerCase()));
-  const referenceCount = referenceFiles.length + referenceUploadIds.length + referenceAssetIds.length + (useCharacterReferences ? characterReferences.length : 0);
+  // The face-swap LoRA takes one face, so the preset collapses the character
+  // toggles down to a single chosen reference image.
+  const characterReferenceOptions = characters.flatMap((character) => character.references.map((reference) => ({ id: reference.id, characterId: character.id, characterName: character.name, gender: character.gender })));
+  const selectedCharacterReferenceIds = faceSwap
+    ? characterReferenceOptions.filter((option) => option.id === faceSwapReferenceId).map((option) => option.id)
+    : characterReferenceOptions.filter((option) => characterIds.includes(option.characterId)).map((option) => option.id);
+  const manualReferenceCount = referenceFiles.length + referenceUploadIds.length + referenceAssetIds.length;
+  const referenceCount = manualReferenceCount + selectedCharacterReferenceIds.length;
   const referenceLimit = (skipSource ? selected?.maxReferenceImages : selected?.maxReferenceImagesWithSource) ?? 0;
   const fallbackReferenceLimit = (skipSource ? referenceModels[0]?.maxReferenceImages : referenceModels[0]?.maxReferenceImagesWithSource) ?? 0;
   const batchPreset = faceSwap || sharpenUnblur;
@@ -156,17 +165,31 @@ export function ImageEditForm({ models, assets, characterReferences, defaultMode
       setError("No installed image-edit model accepts reference images.");
       return;
     }
-    const limit = (skipSource ? target.maxReferenceImages : target.maxReferenceImagesWithSource) ?? 0;
-    const remaining = limit - referenceCount;
+    // Face swap always ends up with a single reference, so an upload replaces whatever face was chosen.
+    const limit = faceSwap ? 1 : (skipSource ? target.maxReferenceImages : target.maxReferenceImagesWithSource) ?? 0;
+    const remaining = limit - (faceSwap ? manualReferenceCount : referenceCount);
     if (remaining <= 0) {
-      setError(`${target.displayName} accepts no more than ${limit} reference images${skipSource ? "" : " alongside the image being edited"}.`);
+      setError(faceSwap ? "Face swap uses exactly one reference image." : `${target.displayName} accepts no more than ${limit} reference images${skipSource ? "" : " alongside the image being edited"}.`);
       return;
     }
     const accepted = files.filter((item) => item.type.startsWith("image/")).slice(0, remaining);
     if (accepted.length !== files.length) setError(`Only the first ${remaining} valid image references were added.`);
     setReferenceFiles((current) => [...current, ...accepted.map((item) => ({ id: crypto.randomUUID(), file: item, preview: createPreview(item) }))]);
+    if (accepted.length && faceSwap) setFaceSwapReferenceId("");
     if (accepted.length && target.key !== modelKey) selectModel(target.key);
-  }, [createPreview, modelKey, referenceCount, referenceModels, selectModel, selected, skipSource]);
+  }, [createPreview, faceSwap, manualReferenceCount, modelKey, referenceCount, referenceModels, selectModel, selected, skipSource]);
+
+  const clearManualReferences = () => {
+    setReferenceFiles((current) => {
+      current.forEach((item) => {
+        URL.revokeObjectURL(item.preview);
+        previewUrls.current.delete(item.preview);
+      });
+      return [];
+    });
+    setReferenceUploadIds([]);
+    setReferenceAssetIds([]);
+  };
 
   const removeReferenceFile = (id: string) => {
     setReferenceFiles((current) => current.filter((item) => {
@@ -175,6 +198,20 @@ export function ImageEditForm({ models, assets, characterReferences, defaultMode
       previewUrls.current.delete(item.preview);
       return false;
     }));
+  };
+
+  const selectFaceSwapGender = (next: CharacterGender) => {
+    setFaceSwapGender(next);
+    if (faceSwap) setPrompt(faceSwapPrompt(next));
+  };
+
+  const selectFaceSwapReference = (option?: { id: string; gender: CharacterGender }) => {
+    setError("");
+    setFaceSwapReferenceId(option?.id ?? "");
+    if (option) {
+      selectFaceSwapGender(option.gender);
+      clearManualReferences();
+    }
   };
 
   const setFaceSwapEnabled = (enabled: boolean) => {
@@ -189,8 +226,13 @@ export function ImageEditForm({ models, assets, characterReferences, defaultMode
       setSkipSource(false);
       setAccelerationPreset(undefined);
       if (qwenModel) selectModel(qwenModel.key);
-      setPrompt(FACE_SWAP_PROMPT);
       setSteps(FACE_SWAP_STEPS);
+      // Fall back to the first saved reference so a stocked library never forces an upload.
+      const preselected = manualReferenceCount ? undefined : characterReferenceOptions[0];
+      const gender = preselected?.gender ?? faceSwapGender;
+      setFaceSwapReferenceId(preselected?.id ?? "");
+      setFaceSwapGender(gender);
+      setPrompt(faceSwapPrompt(gender));
     } else {
       limitSourceFilesToOne();
       setPrompt(previousPrompt.current);
@@ -259,8 +301,9 @@ export function ImageEditForm({ models, assets, characterReferences, defaultMode
             sourceAssetId: skipSource || submittedSourceUploadId ? undefined : sourceAssetId || undefined,
             referenceUploadIds: submittedReferenceUploadIds,
             referenceAssetIds,
-            characterReferenceIds: useCharacterReferences ? characterReferences.map((reference) => reference.id) : [],
+            characterReferenceIds: selectedCharacterReferenceIds,
             faceSwap,
+            faceSwapGender,
             sharpenUnblur,
             prompt,
             negativePrompt: data.get("negativePrompt"),
@@ -316,24 +359,39 @@ export function ImageEditForm({ models, assets, characterReferences, defaultMode
       </section>
 
       <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
-        <div className="flex items-start justify-between gap-4"><div><h2 className="text-sm font-bold">Reference images</h2><p className="mt-1 text-xs leading-5 text-[var(--muted)]">People or objects the model should carry into the edited image.</p></div><span className="shrink-0 text-xs font-bold text-[var(--muted)]">{referenceCount}/{referenceLimit || fallbackReferenceLimit}</span></div>
-        {characterReferences.length > 0 && <label className="mt-3 flex cursor-pointer items-center justify-between gap-3 border border-[var(--line)] bg-white p-3">
-          <span className="flex items-center gap-3">
-            <span className="flex -space-x-3">{characterReferences.map((reference, index) => <span key={reference.id} className="relative size-10 overflow-hidden rounded-full border-2 border-white bg-[#f6f4ee]"><Image src={`/api/settings/character-references/${reference.id}/content`} alt={`Saved character reference ${index + 1}`} fill sizes="40px" className="object-cover" unoptimized /></span>)}</span>
-            <span><span className="flex items-center gap-2 text-sm font-bold"><UserRoundCheck size={17} />Use character references</span><span className="mt-1 block text-xs leading-5 text-[var(--muted)]">{characterReferences.length} saved in Settings.</span></span>
-          </span>
-          <input type="checkbox" role="switch" checked={useCharacterReferences} onChange={(event) => { setUseCharacterReferences(event.target.checked); if (event.target.checked && !selected?.maxReferenceImages && referenceModels[0]) selectModel(referenceModels[0].key); }} className="size-5 shrink-0 accent-[var(--teal)]" />
-        </label>}
+        <div className="flex items-start justify-between gap-4"><div><h2 className="text-sm font-bold">Reference images</h2><p className="mt-1 text-xs leading-5 text-[var(--muted)]">{faceSwap ? "Face swap uses exactly one reference: the face to bring in." : "People or objects the model should carry into the edited image."}</p></div><span className="shrink-0 text-xs font-bold text-[var(--muted)]">{referenceCount}/{faceSwap ? 1 : referenceLimit || fallbackReferenceLimit}</span></div>
+        {characterReferenceOptions.length > 0 && (faceSwap
+          ? <fieldset className="mt-3 border border-[var(--line)] bg-white p-3">
+            <legend className="px-1 text-xs font-bold">Saved character face</legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {characterReferenceOptions.map((option, index) => <label key={option.id} className="flex min-w-0 cursor-pointer items-center gap-3 border border-[var(--line)] p-2 text-xs">
+                <input type="radio" name="faceSwapReference" checked={faceSwapReferenceId === option.id} onChange={() => selectFaceSwapReference(option)} className="shrink-0 accent-[var(--teal)]" />
+                <span className="relative size-10 shrink-0 overflow-hidden rounded-full bg-[#f6f4ee]"><Image src={`/api/settings/character-references/${option.id}/content`} alt={`${option.characterName} reference ${index + 1}`} fill sizes="40px" className="object-cover" unoptimized /></span>
+                <span className="truncate font-bold">{option.characterName}</span>
+              </label>)}
+              <label className="flex cursor-pointer items-center gap-3 border border-[var(--line)] p-2 text-xs">
+                <input type="radio" name="faceSwapReference" checked={!faceSwapReferenceId} onChange={() => selectFaceSwapReference()} className="shrink-0 accent-[var(--teal)]" />
+                <span className="font-bold">Upload a face instead</span>
+              </label>
+            </div>
+          </fieldset>
+          : <div className="mt-3 space-y-2">{characters.filter((character) => character.references.length > 0).map((character) => <label key={character.id} className="flex cursor-pointer items-center justify-between gap-3 border border-[var(--line)] bg-white p-3">
+            <span className="flex min-w-0 items-center gap-3">
+              <span className="flex -space-x-3">{character.references.map((reference, index) => <span key={reference.id} className="relative size-10 overflow-hidden rounded-full border-2 border-white bg-[#f6f4ee]"><Image src={`/api/settings/character-references/${reference.id}/content`} alt={`${character.name} reference ${index + 1}`} fill sizes="40px" className="object-cover" unoptimized /></span>)}</span>
+              <span className="min-w-0"><span className="flex items-center gap-2 truncate text-sm font-bold"><UserRoundCheck size={17} />{character.name}</span><span className="mt-1 block text-xs leading-5 text-[var(--muted)]">{character.references.length} reference image{character.references.length === 1 ? "" : "s"} saved in Settings.</span></span>
+            </span>
+            <input type="checkbox" role="switch" aria-label={`Use ${character.name} reference images`} checked={characterIds.includes(character.id)} onChange={(event) => { setCharacterIds((current) => event.target.checked ? [...current, character.id] : current.filter((id) => id !== character.id)); if (event.target.checked && !selected?.maxReferenceImages && referenceModels[0]) selectModel(referenceModels[0].key); }} className="size-5 shrink-0 accent-[var(--teal)]" />
+          </label>)}</div>)}
         <label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addReferenceFiles([...event.dataTransfer.files]); }} className="mt-3 flex min-h-28 cursor-pointer items-center justify-center border border-dashed border-[#9ca69d] bg-[#f6f4ee] px-4 text-center hover:border-[var(--teal)]">
           <span><Upload className="mx-auto mb-2 text-[var(--teal)]" size={24} /><strong className="block text-sm">Drop or choose reference images</strong></span>
           <input className="sr-only" type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => { addReferenceFiles([...(event.target.files ?? [])]); event.target.value = ""; }} />
         </label>
         {(referenceUploadIds.length > 0 || referenceFiles.length > 0) && <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{referenceUploadIds.map((uploadId, index) => <div key={uploadId} className="relative aspect-square overflow-hidden border border-[var(--line)] bg-[#f6f4ee]"><Image src={`/api/uploads/${uploadId}/content`} alt={`Saved reference ${index + 1}`} fill sizes="(max-width: 640px) 50vw, 220px" className="object-cover" unoptimized /><button type="button" onClick={() => setReferenceUploadIds((current) => current.filter((id) => id !== uploadId))} title="Remove reference" aria-label={`Remove saved reference ${index + 1}`} className="absolute right-2 top-2 grid size-9 place-items-center rounded-md bg-white text-[var(--foreground)] shadow-sm"><Trash2 size={16} /></button></div>)}{referenceFiles.map((reference, index) => <div key={reference.id} className="relative aspect-square overflow-hidden border border-[var(--line)] bg-[#f6f4ee]"><Image src={reference.preview} alt={`Reference ${referenceUploadIds.length + index + 1}`} fill sizes="(max-width: 640px) 50vw, 220px" className="object-cover" unoptimized /><button type="button" onClick={() => removeReferenceFile(reference.id)} title="Remove reference" aria-label={`Remove reference ${referenceUploadIds.length + index + 1}`} className="absolute right-2 top-2 grid size-9 place-items-center rounded-md bg-white text-[var(--foreground)] shadow-sm"><Trash2 size={16} /></button></div>)}</div>}
-        {assets.length > 0 && <fieldset className="mt-4"><details open={referenceOutputsOpen} onToggle={(event) => setReferenceOutputsOpen(event.currentTarget.open)} className="border border-[var(--line)] bg-white"><summary className="cursor-pointer p-3 text-sm font-bold">Or use image outputs <span className="text-xs font-normal text-[var(--muted)]">({referenceAssetIds.length ? `${referenceAssetIds.length} selected of ${assets.length}` : `${assets.length} available`})</span></summary><div className="grid max-h-80 gap-2 overflow-y-auto border-t border-[var(--line)] p-3 sm:grid-cols-2">{assets.map((asset) => { const checked = referenceAssetIds.includes(asset.id); return <label key={asset.id} className="flex min-w-0 items-center gap-3 border border-[var(--line)] bg-white p-2 text-xs"><input type="checkbox" checked={checked} disabled={!checked && referenceCount >= (referenceLimit || fallbackReferenceLimit)} onChange={(event) => { setReferenceAssetIds((current) => event.target.checked ? [...current, asset.id] : current.filter((id) => id !== asset.id)); if (event.target.checked && !selected?.maxReferenceImages && referenceModels[0]) selectModel(referenceModels[0].key); }} /><span className="relative size-10 shrink-0 overflow-hidden bg-[#f6f4ee]"><Image src={asset.contentUrl} alt="" fill sizes="40px" className="object-cover" unoptimized /></span><span className="truncate">{asset.filename}</span></label>; })}</div></details></fieldset>}
+        {assets.length > 0 && <fieldset className="mt-4"><details open={referenceOutputsOpen} onToggle={(event) => setReferenceOutputsOpen(event.currentTarget.open)} className="border border-[var(--line)] bg-white"><summary className="cursor-pointer p-3 text-sm font-bold">Or use image outputs <span className="text-xs font-normal text-[var(--muted)]">({referenceAssetIds.length ? `${referenceAssetIds.length} selected of ${assets.length}` : `${assets.length} available`})</span></summary><div className="grid max-h-80 gap-2 overflow-y-auto border-t border-[var(--line)] p-3 sm:grid-cols-2">{assets.map((asset) => { const checked = referenceAssetIds.includes(asset.id); return <label key={asset.id} className="flex min-w-0 items-center gap-3 border border-[var(--line)] bg-white p-2 text-xs"><input type="checkbox" checked={checked} disabled={!checked && referenceCount >= (faceSwap ? 1 : referenceLimit || fallbackReferenceLimit)} onChange={(event) => { setReferenceAssetIds((current) => event.target.checked ? [...current, asset.id] : current.filter((id) => id !== asset.id)); if (event.target.checked && faceSwap) setFaceSwapReferenceId(""); if (event.target.checked && !selected?.maxReferenceImages && referenceModels[0]) selectModel(referenceModels[0].key); }} /><span className="relative size-10 shrink-0 overflow-hidden bg-[#f6f4ee]"><Image src={asset.contentUrl} alt="" fill sizes="40px" className="object-cover" unoptimized /></span><span className="truncate">{asset.filename}</span></label>; })}</div></details></fieldset>}
       </section>
 
       <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="edit-prompt" className="block text-sm font-bold">Edit prompt</label><InsertCharacterButton characterPrompt={characterPrompt} prompt={prompt} textarea={promptRef} disabled={faceSwap} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></div>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="edit-prompt" className="block text-sm font-bold">Edit prompt</label><InsertCharacterButton characters={characters} prompt={prompt} textarea={promptRef} disabled={faceSwap} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></div>
         <textarea ref={promptRef} id="edit-prompt" name="prompt" required readOnly={faceSwap} rows={7} maxLength={4000} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe what should change and what should stay the same..." className="w-full rounded-md border border-[#b8beb7] bg-white p-4 leading-7 outline-none focus:border-[var(--teal)] read-only:bg-[#f1f0eb]" />
         <label htmlFor="edit-negative-prompt" className="mb-2 mt-5 block text-sm font-bold">Negative prompt</label>
         <textarea id="edit-negative-prompt" name="negativePrompt" rows={4} maxLength={4000} defaultValue={initialRequest?.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT} className="w-full rounded-md border border-[#b8beb7] bg-white p-4 text-sm leading-6 outline-none focus:border-[var(--teal)]" />
@@ -358,11 +416,12 @@ export function ImageEditForm({ models, assets, characterReferences, defaultMode
           </span>
         </label>
       </div>
-      <label className="block text-sm font-bold">Model<select value={modelKey} disabled={faceSwap || sharpenUnblur || referenceCount > 0} onChange={(event) => selectModel(event.target.value)} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available" || (referenceCount > 0 && !model.maxReferenceImages) || (skipSource && !supportsTextToImage(model))}>{model.displayName}</option>)}</select></label>
+      <label className="block text-sm font-bold">Model<select value={modelKey} disabled={faceSwap || sharpenUnblur} onChange={(event) => selectModel(event.target.value)} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available" || (referenceCount > 0 && !model.maxReferenceImages) || (skipSource && !supportsTextToImage(model))}>{model.displayName}</option>)}</select></label>
+      {referenceCount > 0 && !selected?.maxReferenceImages && <p className="-mt-3 text-[0.68rem] leading-4 text-[var(--accent)]">This model ignores reference images. Remove them or choose a reference-capable model.</p>}
       <label className="block text-sm font-bold">Resolution<select name="resolution" key={modelKey} defaultValue={reuseSelections ? initialRequest?.resolution ?? selected?.controls.defaultResolution : selected?.controls.defaultResolution} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3">{(selected?.controls.resolutions ?? [{ label: "1024x1024", value: "1024x1024" }]).map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></label>
       <label className="block text-sm font-bold">Steps<input name="steps" type="number" min={selected?.controls.steps.min ?? 1} max={selected?.controls.steps.max ?? 200} step={selected?.controls.steps.step ?? 1} value={accelerationPreset?.settings.numInferenceSteps ?? steps} disabled={faceSwap || accelerationPreset?.settings.numInferenceSteps !== undefined} onChange={(event) => setSteps(Number(event.target.value))} required className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]" /></label>
       {selected?.controls.guidance && <label className="block text-sm font-bold">Guidance (CFG)<input name="guidanceScale" type="number" min={selected.controls.guidance.min} max={selected.controls.guidance.max} step={selected.controls.guidance.step} value={effectiveGuidance} disabled={faceSwap || accelerationPreset?.settings.guidanceScale !== undefined} onChange={(event) => setGuidanceScale(Number(event.target.value))} required className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]" /></label>}
-      {faceSwap ? <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">Face-swap LoRAs</p><div className="mt-3 space-y-2">{FACE_SWAP_LORAS.map((lora) => <div key={lora.name} className="grid grid-cols-[minmax(0,1fr)_42px] gap-2 text-xs"><span className="truncate" title={lora.name}>{lora.name.split("/").at(-1)}</span><strong className="text-right">{lora.strength}</strong></div>)}</div></div> : sharpenUnblur ? <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">Sharpen and Unblur LoRA</p><div className="mt-3 grid grid-cols-[minmax(0,1fr)_42px] gap-2 text-xs"><span className="truncate" title={SHARPEN_UNBLUR_LORA.name}>{SHARPEN_UNBLUR_LORA.name}</span><strong className="text-right">{SHARPEN_UNBLUR_LORA.strength}</strong></div><p className="mt-2 text-[0.68rem] leading-4 text-[var(--muted)]">Other LoRAs are disabled for this preset.</p></div> : <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} initialLoras={reuseSelections ? initialRequest?.loras : selected?.defaultLoras} initialPresetId={reuseSelections ? initialRequest?.loraPresetId : undefined} onPresetChange={(next) => { if (next) { previousAccelerationValues.current = { steps, guidance: guidanceScale }; setAccelerationPreset(next); } else { setAccelerationPreset(undefined); setSteps(previousAccelerationValues.current.steps); setGuidanceScale(previousAccelerationValues.current.guidance); } }} />}
+      {faceSwap ? <div className="border-t border-[var(--line)] pt-4"><label className="block text-sm font-bold">Face to swap in<select value={faceSwapGender} onChange={(event) => selectFaceSwapGender(event.target.value as CharacterGender)} className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3">{CHARACTER_GENDERS.map((choice) => <option key={choice} value={choice}>{choice === "female" ? "Woman" : "Man"}</option>)}</select></label><p className="mt-2 text-[0.68rem] leading-4 text-[var(--muted)]">Sets the subject wording in the head-swap prompt.</p><p className="mt-4 text-sm font-bold">Face-swap LoRAs</p><div className="mt-3 space-y-2">{FACE_SWAP_LORAS.map((lora) => <div key={lora.name} className="grid grid-cols-[minmax(0,1fr)_42px] gap-2 text-xs"><span className="truncate" title={lora.name}>{lora.name.split("/").at(-1)}</span><strong className="text-right">{lora.strength}</strong></div>)}</div></div> : sharpenUnblur ? <div className="border-t border-[var(--line)] pt-4"><p className="text-sm font-bold">Sharpen and Unblur LoRA</p><div className="mt-3 grid grid-cols-[minmax(0,1fr)_42px] gap-2 text-xs"><span className="truncate" title={SHARPEN_UNBLUR_LORA.name}>{SHARPEN_UNBLUR_LORA.name}</span><strong className="text-right">{SHARPEN_UNBLUR_LORA.strength}</strong></div><p className="mt-2 text-[0.68rem] leading-4 text-[var(--muted)]">Other LoRAs are disabled for this preset.</p></div> : <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} initialLoras={reuseSelections ? initialRequest?.loras : selected?.defaultLoras} initialPresetId={reuseSelections ? initialRequest?.loraPresetId : undefined} onPresetChange={(next) => { if (next) { previousAccelerationValues.current = { steps, guidance: guidanceScale }; setAccelerationPreset(next); } else { setAccelerationPreset(undefined); setSteps(previousAccelerationValues.current.steps); setGuidanceScale(previousAccelerationValues.current.guidance); } }} />}
       <details className="border-t border-[var(--line)] pt-4"><summary className="cursor-pointer text-sm font-bold">Advanced</summary><div className="mt-4 space-y-4">
         {selected?.controls.solvers.length ? <label className="block text-sm font-bold">Solver<select className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3 disabled:bg-[#f1f0eb]" value={effectiveSolver} disabled={faceSwap || accelerationPreset?.settings.sampleSolver !== undefined} onChange={(event) => setSampleSolver(event.target.value)}><option value="">Model default</option>{faceSwap && !selected.controls.solvers.some((choice) => choice.value === "lightning") && <option value="lightning">Lightning</option>}{selected.controls.solvers.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></label> : null}
         {selected?.controls.schedulers.length ? <label className="block text-sm font-bold">Scheduler<select className="mt-2 min-h-11 w-full rounded-md border border-[#b8beb7] bg-white px-3" value={scheduler} onChange={(event) => setScheduler(event.target.value)}><option value="">Model default</option>{selected.controls.schedulers.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></label> : null}

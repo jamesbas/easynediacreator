@@ -1,12 +1,12 @@
 import type { ImageEditRequest } from "@/lib/requests";
-import { FACE_SWAP_LORAS, FACE_SWAP_PROMPT, FACE_SWAP_STEPS } from "@/lib/face-swap-preset";
+import { FACE_SWAP_LORAS, faceSwapPrompt, FACE_SWAP_STEPS } from "@/lib/face-swap-preset";
 import { REFERENCE_SUBJECTS_ONLY } from "../reference-images";
 import { applyLoraSettings, applySamplingSettings, setDiscoveredSetting } from "../settings-builder";
 
 export function buildQwenImageEditSettings(request: ImageEditRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string, sourcePath?: string, referencePaths: string[] = []) {
   if (Object.keys(request.advanced).length) throw new Error("The selected model does not allow these advanced settings.");
   const settings = { ...defaults };
-  setDiscoveredSetting(settings, schema, defaults, modelType, ["prompt", "text_prompt", "instruction"], request.faceSwap ? FACE_SWAP_PROMPT : request.prompt, true);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["prompt", "text_prompt", "instruction"], request.faceSwap ? faceSwapPrompt(request.faceSwapGender) : request.prompt, true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["negative_prompt"], request.negativePrompt, true);
   if (sourcePath && referencePaths.length) {
     setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mode"], 1, true);

@@ -3,18 +3,18 @@
 import { Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
-import type { CharacterReferenceSummary } from "@/components/settings/character-reference-images";
+import type { CharacterSummary } from "@/lib/character-prompt";
 import { DEFAULT_NEGATIVE_PROMPT, type ImageCreateRequest } from "@/lib/requests";
 import type { LoraAccelerationPreset, LoraCatalog } from "@/lib/types";
 import type { GenerationControls } from "@/lib/wan-gp/generation-controls";
 import { hasGuidanceOneMarker } from "@/lib/wan-gp/image-guidance";
 import { InsertCharacterButton } from "./insert-character-button";
 import { LoraSelector, readLoraSelections } from "./lora-selector";
-import { countReferenceSelection, emptyReferenceSelection, ReferenceImagePicker, uploadReferenceImage, type ReferenceAssetOption, type ReferenceSelectionState } from "./reference-image-picker";
+import { countReferenceSelection, emptyReferenceSelection, ReferenceImagePicker, selectedCharacterReferenceIds, uploadReferenceImage, type ReferenceAssetOption, type ReferenceSelectionState } from "./reference-image-picker";
 
 type FormModel = { key: string; displayName: string; availability: string; reason?: string; controls: GenerationControls; lockedGuidance?: number; maxReferenceImages?: number; loraCatalog: LoraCatalog; defaultLoras: { name: string; strength: number }[] };
 
-export function ImageCreateForm({ models, assets, characterReferences, defaultModel, characterPrompt, initialRequest }: { models: FormModel[]; assets: ReferenceAssetOption[]; characterReferences: CharacterReferenceSummary[]; defaultModel: string; characterPrompt: string; initialRequest?: ImageCreateRequest }) {
+export function ImageCreateForm({ models, assets, characters, defaultModel, initialRequest }: { models: FormModel[]; assets: ReferenceAssetOption[]; characters: CharacterSummary[]; defaultModel: string; initialRequest?: ImageCreateRequest }) {
   const router = useRouter();
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const reusableModel = models.find((model) => model.key === initialRequest?.modelKey && model.availability === "available");
@@ -30,7 +30,7 @@ export function ImageCreateForm({ models, assets, characterReferences, defaultMo
   const [selectedLoraNames, setSelectedLoraNames] = useState<string[]>(initialRequest?.loras.map((lora) => lora.name) ?? []);
   const [reuseSelections, setReuseSelections] = useState(Boolean(reusableModel));
   const [references, setReferences] = useState<ReferenceSelectionState>(emptyReferenceSelection);
-  const referenceCount = countReferenceSelection(references, characterReferences);
+  const referenceCount = countReferenceSelection(references, characters);
   const lockedGuidance = preset?.settings.guidanceScale ?? selected?.lockedGuidance ?? (modelKey === "qwen-image" && hasGuidanceOneMarker(selectedLoraNames) ? 1 : undefined);
   const guidanceLocked = lockedGuidance !== undefined;
   const effectiveGuidance = lockedGuidance ?? guidanceScale;
@@ -48,7 +48,7 @@ export function ImageCreateForm({ models, assets, characterReferences, defaultMo
       const data = new FormData(event.currentTarget);
       try {
         const referenceUploadIds = await Promise.all(references.files.map((reference) => uploadReferenceImage(reference.file)));
-        const response = await fetch("/api/jobs/image-create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: data.get("prompt"), negativePrompt: data.get("negativePrompt"), modelKey, resolution: data.get("resolution") || undefined, count: Number(data.get("count")), steps, guidanceScale: effectiveGuidance, sampleSolver: sampleSolver || undefined, scheduler: scheduler || undefined, loraPresetId: data.get("loraPresetId") || undefined, seed: data.get("seed") ? Number(data.get("seed")) : undefined, loras: readLoraSelections(data), referenceUploadIds, referenceAssetIds: references.assetIds, characterReferenceIds: references.useCharacterReferences ? characterReferences.map((reference) => reference.id) : [], advanced: {} }) });
+        const response = await fetch("/api/jobs/image-create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: data.get("prompt"), negativePrompt: data.get("negativePrompt"), modelKey, resolution: data.get("resolution") || undefined, count: Number(data.get("count")), steps, guidanceScale: effectiveGuidance, sampleSolver: sampleSolver || undefined, scheduler: scheduler || undefined, loraPresetId: data.get("loraPresetId") || undefined, seed: data.get("seed") ? Number(data.get("seed")) : undefined, loras: readLoraSelections(data), referenceUploadIds, referenceAssetIds: references.assetIds, characterReferenceIds: selectedCharacterReferenceIds(references, characters), advanced: {} }) });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error ?? "Generation could not be started.");
         router.push(`/jobs?focus=${result.job.id}`);
@@ -59,13 +59,13 @@ export function ImageCreateForm({ models, assets, characterReferences, defaultMo
     }}>
       <div className="space-y-6">
         <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="prompt" className="block text-sm font-bold">Prompt</label><InsertCharacterButton characterPrompt={characterPrompt} prompt={prompt} textarea={promptRef} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="prompt" className="block text-sm font-bold">Prompt</label><InsertCharacterButton characters={characters} prompt={prompt} textarea={promptRef} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></div>
           <textarea ref={promptRef} id="prompt" name="prompt" required maxLength={4000} rows={9} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe the image, subject, setting, light, and visual treatment..." className="w-full resize-y rounded-md border border-[#b8beb7] bg-white p-4 text-base leading-7 outline-none focus:border-[var(--teal)] focus:ring-2 focus:ring-[#b5d9d3]" />
           <label htmlFor="negative-prompt" className="mb-2 mt-5 block text-sm font-bold">Negative prompt</label>
           <textarea id="negative-prompt" name="negativePrompt" maxLength={4000} rows={4} defaultValue={initialRequest?.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT} className="w-full resize-y rounded-md border border-[#b8beb7] bg-white p-4 text-sm leading-6 outline-none focus:border-[var(--teal)] focus:ring-2 focus:ring-[#b5d9d3]" />
           {error && <p role="alert" className="mt-3 text-sm font-semibold text-[var(--accent)]">{error}</p>}
         </section>
-        <ReferenceImagePicker assets={assets} characterReferences={characterReferences} selection={references} onChange={setReferences} limit={referenceLimit || 1} disabledReason={referencesUnavailable} />
+        <ReferenceImagePicker assets={assets} characters={characters} selection={references} onChange={setReferences} limit={referenceLimit || 1} disabledReason={referencesUnavailable} />
       </div>
       <aside className="space-y-5 border border-[var(--line)] bg-[var(--surface)] p-5">
         <Field label="Model"><select value={modelKey} onChange={(event) => { const next = models.find((model) => model.key === event.target.value); setModelKey(event.target.value); setGuidanceScale(next?.controls.guidance?.defaultValue ?? 1); setSteps(next?.controls.steps.defaultValue ?? 20); setSampleSolver(next?.controls.defaultSolver ?? ""); setScheduler(next?.controls.defaultScheduler ?? ""); setPreset(undefined); setSelectedLoraNames([]); setReuseSelections(false); }} required className="control"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available" || (referenceCount > 0 && !model.maxReferenceImages)}>{model.displayName}{model.availability !== "available" ? ` (${model.availability})` : ""}</option>)}</select></Field>

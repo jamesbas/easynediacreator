@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ImageCreateForm } from "@/components/forms/image-create-form";
 import { config } from "@/lib/config";
 import { getModels } from "@/lib/runtime/model-cache";
-import { getAppPreferences } from "@/lib/runtime/app-preferences";
+import { getAppPreferences, characterSummaries } from "@/lib/runtime/app-preferences";
 import { getJob } from "@/lib/runtime/job-registry";
 import { listOutputs, publicAsset } from "@/lib/runtime/output-registry";
 import { FLUX_KLEIN_IMAGE_PRESET, getImageFallbackResolutions } from "@/lib/wan-gp/image-presets";
@@ -34,5 +34,5 @@ export default async function CreateImagePage({ searchParams }: { searchParams: 
   const { fromJob } = await searchParams;
   const snapshot = fromJob ? getJob(fromJob)?.requestSnapshot : undefined;
   const initialRequest = snapshot?.workflowType === "image-create" ? snapshot.request : undefined;
-  return <><PageHeader eyebrow="Image Studio" title="Create an image" description="Shape a new image from your prompt using an approved local model." /><ImageCreateForm models={models} assets={assets} characterReferences={preferences.characterReferences} defaultModel={config.DEFAULT_IMAGE_CREATE_MODEL} characterPrompt={preferences.characterPrompt} initialRequest={initialRequest} /></>;
+  return <><PageHeader eyebrow="Image Studio" title="Create an image" description="Shape a new image from your prompt using an approved local model." /><ImageCreateForm models={models} assets={assets} characters={characterSummaries(preferences.characters)} defaultModel={config.DEFAULT_IMAGE_CREATE_MODEL} initialRequest={initialRequest} /></>;
 }

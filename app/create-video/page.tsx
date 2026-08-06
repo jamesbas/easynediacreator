@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { VideoCreateForm } from "@/components/forms/video-create-form";
 import { config } from "@/lib/config";
 import { getModels } from "@/lib/runtime/model-cache";
-import { getAppPreferences } from "@/lib/runtime/app-preferences";
+import { getAppPreferences, characterSummaries } from "@/lib/runtime/app-preferences";
 import { getJob } from "@/lib/runtime/job-registry";
 import { listOutputs, publicAsset } from "@/lib/runtime/output-registry";
 import { getGenerationControls } from "@/lib/wan-gp/generation-controls";
@@ -21,5 +21,5 @@ export default async function CreateVideoPage({ searchParams }: { searchParams: 
   const { start, fromJob } = await searchParams;
   const snapshot = fromJob ? getJob(fromJob)?.requestSnapshot : undefined;
   const initialRequest = snapshot?.workflowType === "video-create" ? snapshot.request : undefined;
-  return <><PageHeader eyebrow="Motion Studio" title="Create a video" description="Animate a start frame with your locally installed LTX-2 model." /><VideoCreateForm models={models} assets={assets} defaultModel={config.DEFAULT_VIDEO_MODEL} characterPrompt={preferences.characterPrompt} initialStartId={assets.some((asset) => asset.id === start) ? start : undefined} initialRequest={initialRequest} /></>;
+  return <><PageHeader eyebrow="Motion Studio" title="Create a video" description="Animate a start frame with your locally installed LTX-2 model." /><VideoCreateForm models={models} assets={assets} defaultModel={config.DEFAULT_VIDEO_MODEL} characters={characterSummaries(preferences.characters)} initialStartId={assets.some((asset) => asset.id === start) ? start : undefined} initialRequest={initialRequest} /></>;
 }

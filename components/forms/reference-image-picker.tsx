@@ -3,16 +3,21 @@
 import { Trash2, Upload, UserRoundCheck } from "lucide-react";
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CharacterReferenceSummary } from "@/components/settings/character-reference-images";
+import type { CharacterSummary } from "@/lib/character-prompt";
 
 export type ReferenceAssetOption = { id: string; filename: string; contentUrl: string };
 export type PendingReference = { id: string; file: File; preview: string };
-export type ReferenceSelectionState = { files: PendingReference[]; assetIds: string[]; useCharacterReferences: boolean };
+export type ReferenceSelectionState = { files: PendingReference[]; assetIds: string[]; characterIds: string[] };
 
-export const emptyReferenceSelection: ReferenceSelectionState = { files: [], assetIds: [], useCharacterReferences: false };
+export const emptyReferenceSelection: ReferenceSelectionState = { files: [], assetIds: [], characterIds: [] };
 
-export function countReferenceSelection(selection: ReferenceSelectionState, characterReferences: CharacterReferenceSummary[]) {
-  return selection.files.length + selection.assetIds.length + (selection.useCharacterReferences ? characterReferences.length : 0);
+/** Reference image ids for the characters the selection opted into, in library order. */
+export function selectedCharacterReferenceIds(selection: ReferenceSelectionState, characters: CharacterSummary[]) {
+  return characters.filter((character) => selection.characterIds.includes(character.id)).flatMap((character) => character.references.map((reference) => reference.id));
+}
+
+export function countReferenceSelection(selection: ReferenceSelectionState, characters: CharacterSummary[]) {
+  return selection.files.length + selection.assetIds.length + selectedCharacterReferenceIds(selection, characters).length;
 }
 
 export async function uploadReferenceImage(file: File) {
@@ -27,11 +32,11 @@ export async function uploadReferenceImage(file: File) {
 /**
  * Reference images for a generation: saved character photographs, fresh uploads,
  * and previous outputs. WanGP weights the earlier entries of `image_refs` more
- * heavily, which is why the character toggle sits first.
+ * heavily, which is why the character toggles sit first.
  */
-export function ReferenceImagePicker({ assets, characterReferences, selection, onChange, limit, disabledReason }: {
+export function ReferenceImagePicker({ assets, characters, selection, onChange, limit, disabledReason }: {
   assets: ReferenceAssetOption[];
-  characterReferences: CharacterReferenceSummary[];
+  characters: CharacterSummary[];
   selection: ReferenceSelectionState;
   onChange: (next: ReferenceSelectionState) => void;
   limit: number;
@@ -40,8 +45,9 @@ export function ReferenceImagePicker({ assets, characterReferences, selection, o
   const previewUrls = useRef(new Set<string>());
   const [error, setError] = useState("");
   const [outputsOpen, setOutputsOpen] = useState(selection.assetIds.length > 0);
-  const count = countReferenceSelection(selection, characterReferences);
+  const count = countReferenceSelection(selection, characters);
   const disabled = Boolean(disabledReason);
+  const withReferences = characters.filter((character) => character.references.length > 0);
 
   useEffect(() => {
     const urls = previewUrls.current;
@@ -81,13 +87,13 @@ export function ReferenceImagePicker({ assets, characterReferences, selection, o
       <span className="shrink-0 text-xs font-bold text-[var(--muted)]">{count}/{limit}</span>
     </div>
 
-    {characterReferences.length > 0 && <label className={`mt-4 flex items-center justify-between gap-3 border border-[var(--line)] bg-white p-3 ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
-      <span className="flex items-center gap-3">
-        <span className="flex -space-x-3">{characterReferences.map((reference, index) => <span key={reference.id} className="relative size-10 overflow-hidden rounded-full border-2 border-white bg-[#f6f4ee]"><Image src={`/api/settings/character-references/${reference.id}/content`} alt={`Saved character reference ${index + 1}`} fill sizes="40px" className="object-cover" unoptimized /></span>)}</span>
-        <span><span className="flex items-center gap-2 text-sm font-bold"><UserRoundCheck size={17} />Use character references</span><span className="mt-1 block text-xs leading-5 text-[var(--muted)]">{characterReferences.length} saved in Settings.</span></span>
+    {withReferences.length > 0 && <div className="mt-4 space-y-2">{withReferences.map((character) => <label key={character.id} className={`flex items-center justify-between gap-3 border border-[var(--line)] bg-white p-3 ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
+      <span className="flex min-w-0 items-center gap-3">
+        <span className="flex -space-x-3">{character.references.map((reference, index) => <span key={reference.id} className="relative size-10 overflow-hidden rounded-full border-2 border-white bg-[#f6f4ee]"><Image src={`/api/settings/character-references/${reference.id}/content`} alt={`${character.name} reference ${index + 1}`} fill sizes="40px" className="object-cover" unoptimized /></span>)}</span>
+        <span className="min-w-0"><span className="flex items-center gap-2 truncate text-sm font-bold"><UserRoundCheck size={17} />{character.name}</span><span className="mt-1 block text-xs leading-5 text-[var(--muted)]">{character.references.length} reference image{character.references.length === 1 ? "" : "s"} saved in Settings.</span></span>
       </span>
-      <input type="checkbox" role="switch" checked={selection.useCharacterReferences} disabled={disabled} onChange={(event) => onChange({ ...selection, useCharacterReferences: event.target.checked })} className="size-5 shrink-0 accent-[var(--teal)]" />
-    </label>}
+      <input type="checkbox" role="switch" aria-label={`Use ${character.name} reference images`} checked={selection.characterIds.includes(character.id)} disabled={disabled} onChange={(event) => onChange({ ...selection, characterIds: event.target.checked ? [...selection.characterIds, character.id] : selection.characterIds.filter((id) => id !== character.id) })} className="size-5 shrink-0 accent-[var(--teal)]" />
+    </label>)}</div>}
 
     <label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (!disabled) addFiles([...event.dataTransfer.files]); }} className={`mt-3 flex min-h-28 items-center justify-center border border-dashed border-[#9ca69d] bg-[#f6f4ee] px-4 text-center ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-[var(--teal)]"}`}>
       <span><Upload className="mx-auto mb-2 text-[var(--teal)]" size={24} /><strong className="block text-sm">Drop or choose reference images</strong></span>

@@ -1,4 +1,4 @@
-import { resolveCharacterReferencePaths } from "@/lib/character-references/storage";
+import { resolveCharacterReferencePaths } from "@/lib/characters/storage";
 import type { ReferenceSelection } from "@/lib/requests";
 import { getOutput } from "@/lib/runtime/output-registry";
 import { getUpload } from "@/lib/uploads/storage";

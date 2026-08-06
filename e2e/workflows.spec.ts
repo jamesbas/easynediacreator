@@ -7,6 +7,18 @@ async function png(color = "#146c63") {
   return sharp({ create: { width: 96, height: 64, channels: 3, background: color } }).png().toBuffer();
 }
 
+/** The saved library varies per machine; the insert button only opens a menu once two characters have prompts. */
+async function firstDescribedCharacter(page: import("@playwright/test").Page) {
+  const settings = await (await page.request.get("/api/settings")).json();
+  return (settings.preferences.characters as { name: string; prompt: string }[]).find((character) => character.prompt.trim())!;
+}
+
+async function insertFirstCharacter(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: "Insert character" }).click();
+  const item = page.getByRole("menuitem").first();
+  if (await item.count()) await item.click();
+}
+
 test("creates an image and exposes it in Outputs", async ({ page }) => {
   const prompt = "A bright red observatory above a quiet forest";
   await page.goto("/create-image");
@@ -139,6 +151,9 @@ test("configures and submits a face-swap edit", async ({ page }) => {
   await expect(page.getByText("0.8", { exact: true })).toBeVisible();
   await expect(page.getByText("0.5", { exact: true })).toBeVisible();
   const submit = page.getByRole("button", { name: "Start 2 face swaps" });
+  // A stocked character library pre-picks a face, so opt out of it to exercise the upload path.
+  const uploadInstead = page.getByRole("radio", { name: "Upload a face instead" });
+  if (await uploadInstead.count()) await uploadInstead.check();
   await expect(submit).toBeDisabled();
   await fileInputs.nth(1).setInputFiles({ name: "face.png", mimeType: "image/png", buffer: await png("#146c63") });
   await expect(submit).toBeEnabled();
@@ -232,46 +247,46 @@ test("shows exact WanGP model selections in Settings", async ({ page }) => {
 });
 
 test("inserts the default character into an existing image prompt", async ({ page }) => {
-  const settings = await (await page.request.get("/api/settings")).json();
-  const savedCharacterPrompt = String(settings.preferences.characterPrompt);
+  const character = await firstDescribedCharacter(page);
   await page.goto("/create-image");
   const prompt = page.getByLabel("Prompt", { exact: true });
   await prompt.fill("Standing at the beach at sunset.");
-  await page.getByRole("button", { name: "Insert character" }).click();
-  await expect(prompt).toHaveValue(`Standing at the beach at sunset. ${savedCharacterPrompt}`);
+  await insertFirstCharacter(page);
+  await expect(prompt).toHaveValue(`Standing at the beach at sunset. ${character.prompt}`);
 });
 
 test("inserts the default character into the edit and video prompts", async ({ page }) => {
-  const settings = await (await page.request.get("/api/settings")).json();
-  const savedCharacterPrompt = String(settings.preferences.characterPrompt);
+  const character = await firstDescribedCharacter(page);
 
   await page.goto("/edit-image");
   const editPrompt = page.getByLabel("Edit prompt");
   await editPrompt.fill("Keep the pose.");
-  await page.getByRole("button", { name: "Insert character" }).click();
-  await expect(editPrompt).toHaveValue(`Keep the pose. ${savedCharacterPrompt}`);
+  await insertFirstCharacter(page);
+  await expect(editPrompt).toHaveValue(`Keep the pose. ${character.prompt}`);
 
   await page.goto("/create-video");
   const videoPrompt = page.getByLabel("Video prompt");
   await videoPrompt.fill("She walks toward the camera.");
-  await page.getByRole("button", { name: "Insert character" }).click();
-  await expect(videoPrompt).toHaveValue(`She walks toward the camera. ${savedCharacterPrompt}`);
+  await insertFirstCharacter(page);
+  await expect(videoPrompt).toHaveValue(`She walks toward the camera. ${character.prompt}`);
 });
 
-test("saves an edited default character prompt", async ({ page }) => {
+test("saves an edited character in the library", async ({ page }) => {
   const customPrompt = "A recurring character with silver hair and green eyes.";
+  const settings = await (await page.request.get("/api/settings")).json();
+  const first = settings.preferences.characters[0] as { id: string; name: string; gender: string };
   let submitted: Record<string, unknown> | undefined;
-  await page.route("**/api/settings/preferences", async (route) => {
+  await page.route("**/api/settings/characters/*", async (route) => {
     submitted = route.request().postDataJSON() as Record<string, unknown>;
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ preferences: submitted }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ characters: [{ ...first, prompt: submitted.prompt, references: [] }] }) });
   });
   await page.goto("/settings");
-  await expect(page.getByLabel("Default character prompt")).not.toHaveValue("");
+  await expect(page.getByLabel("Character prompt").first()).not.toHaveValue("");
   await page.screenshot({ path: "test-results/desktop-character-prompt-settings.png", fullPage: true });
-  await page.getByLabel("Default character prompt").fill(customPrompt);
-  await page.getByRole("button", { name: "Save character prompt" }).click();
-  await expect(page.getByRole("status")).toHaveText("Character prompt saved.");
-  expect(submitted).toEqual({ characterPrompt: customPrompt });
+  await page.getByLabel("Character prompt").first().fill(customPrompt);
+  await page.getByRole("button", { name: "Save character" }).first().click();
+  await expect(page.getByRole("status")).toHaveText("Character saved.");
+  expect(submitted).toEqual({ name: first.name, prompt: customPrompt, gender: first.gender });
 });
 
 test("configures and submits the exclusive Sharpen and Unblur preset", async ({ page }) => {

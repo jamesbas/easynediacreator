@@ -1,5 +1,5 @@
 import type { ImageEditRequest } from "@/lib/requests";
-import { FACE_SWAP_LORAS, FACE_SWAP_PROMPT } from "@/lib/face-swap-preset";
+import { FACE_SWAP_LORAS, faceSwapPrompt } from "@/lib/face-swap-preset";
 import { createJob } from "@/lib/runtime/job-registry";
 import { getModels } from "@/lib/runtime/model-cache";
 import { getOutput } from "@/lib/runtime/output-registry";
@@ -36,7 +36,7 @@ export async function editImage(request: ImageEditRequest) {
     if (request.modelKey !== "qwen-image-edit") throw new Error("Sharpen and Unblur requires Qwen Image Edit.");
     if (!model.loraCatalog.supported || !model.loraCatalog.loras.some((name) => name.toLocaleLowerCase() === requiredLora)) throw new Error(`Sharpen and Unblur requires '${SHARPEN_UNBLUR_LORA.name}' in the Qwen LoRA catalog.`);
   }
-  const normalizedRequest = { ...request, prompt: request.faceSwap ? FACE_SWAP_PROMPT : request.prompt, loras: validateModelLoras(request.loras, model.loraCatalog) };
+  const normalizedRequest = { ...request, prompt: request.faceSwap ? faceSwapPrompt(request.faceSwapGender) : request.prompt, loras: validateModelLoras(request.loras, model.loraCatalog) };
   const controls = getGenerationControls(model.schema, model.defaults, { workflow: "image", fallbackResolutions: getImageFallbackResolutions(model.key), fallbackResolution: typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1024x1024" });
   validateGenerationControls(normalizedRequest, controls);
   const preset = resolveLoraPreset(request.loraPresetId, normalizedRequest.loras, model.loraCatalog, model.modelType, "image-edit");

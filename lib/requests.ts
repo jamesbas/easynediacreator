@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MAX_CHARACTER_REFERENCES } from "@/lib/character-prompt";
+import { CHARACTER_GENDERS } from "@/lib/character-prompt";
 
 export const DEFAULT_NEGATIVE_PROMPT = "blurry, low resolution, pixelated, compression artifacts, deformed anatomy, distorted face, malformed hands, extra limbs, extra fingers, missing fingers, fused fingers, warped proportions, duplicate subjects, text, watermark, logo";
 
@@ -31,8 +31,8 @@ const baseGenerationSchema = z.object({
 const referenceSelectionFields = {
   referenceUploadIds: z.array(z.string().uuid()).max(8).optional(),
   referenceAssetIds: z.array(z.string().uuid()).max(8).optional(),
-  /** Saved character reference images, opted into per generation. */
-  characterReferenceIds: z.array(z.string().uuid()).max(MAX_CHARACTER_REFERENCES).optional(),
+  /** Saved character reference images, opted into per generation and drawn from one or more characters. */
+  characterReferenceIds: z.array(z.string().uuid()).max(8).optional(),
 };
 
 export type ReferenceSelection = { referenceUploadIds?: string[]; referenceAssetIds?: string[]; characterReferenceIds?: string[] };
@@ -58,6 +58,8 @@ export const imageEditRequestSchema = baseGenerationSchema.extend({
   sourceUploadId: z.string().uuid().optional(),
   sourceAssetId: z.string().uuid().optional(),
   faceSwap: z.boolean().default(false),
+  /** Picks the subject noun in the face-swap prompt; taken from the saved character when one is chosen. */
+  faceSwapGender: z.enum(CHARACTER_GENDERS).optional(),
   sharpenUnblur: z.boolean().default(false),
   steps: z.number().int().min(1).max(200).default(20),
   guidanceScale: z.number().finite().min(0).max(100).optional(),

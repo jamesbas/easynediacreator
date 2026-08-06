@@ -4,6 +4,7 @@ import { Clapperboard, ImagePlus } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import type { CharacterSummary } from "@/lib/character-prompt";
 import { DEFAULT_NEGATIVE_PROMPT, type VideoCreateRequest } from "@/lib/requests";
 import type { LoraCatalog } from "@/lib/types";
 import type { GenerationControls } from "@/lib/wan-gp/generation-controls";
@@ -23,7 +24,7 @@ type FormModel = {
 type AssetOption = { id: string; filename: string; contentUrl: string };
 type PickedImage = { file?: File; uploadId?: string; assetId?: string; preview?: string };
 
-export function VideoCreateForm({ models, assets, defaultModel, characterPrompt, initialStartId, initialRequest }: { models: FormModel[]; assets: AssetOption[]; defaultModel: string; characterPrompt: string; initialStartId?: string; initialRequest?: VideoCreateRequest }) {
+export function VideoCreateForm({ models, assets, defaultModel, characters, initialStartId, initialRequest }: { models: FormModel[]; assets: AssetOption[]; defaultModel: string; characters: CharacterSummary[]; initialStartId?: string; initialRequest?: VideoCreateRequest }) {
   const router = useRouter();
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const reusableModel = models.find((model) => model.key === initialRequest?.modelKey && model.availability === "available");
@@ -96,7 +97,7 @@ export function VideoCreateForm({ models, assets, defaultModel, characterPrompt,
         <ImagePicker label="End image" value={end} onChange={setEnd} assets={assets} disabled={!selected?.supportsEndFrame} />
       </section>
       <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="video-prompt" className="block text-sm font-bold">Video prompt</label><InsertCharacterButton characterPrompt={characterPrompt} prompt={prompt} textarea={promptRef} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></div>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="video-prompt" className="block text-sm font-bold">Video prompt</label><InsertCharacterButton characters={characters} prompt={prompt} textarea={promptRef} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></div>
         <textarea ref={promptRef} id="video-prompt" name="prompt" required rows={7} maxLength={4000} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe motion, camera movement, pacing, and what changes in the scene..." className="w-full rounded-md border border-[#b8beb7] bg-white p-4 leading-7 outline-none focus:border-[var(--teal)]" />
         <label htmlFor="video-negative-prompt" className="mb-2 mt-5 block text-sm font-bold">Negative prompt</label>
         <textarea id="video-negative-prompt" name="negativePrompt" rows={4} maxLength={4000} defaultValue={initialRequest?.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT} className="w-full rounded-md border border-[#b8beb7] bg-white p-4 text-sm leading-6 outline-none focus:border-[var(--teal)]" />
