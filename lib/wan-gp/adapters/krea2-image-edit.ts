@@ -1,6 +1,6 @@
 import type { ImageEditRequest } from "@/lib/requests";
 import { REFERENCE_LEAD_WITH_SCENE, REFERENCE_SUBJECTS_ONLY } from "../reference-images";
-import { applyLoraSettings, applySamplingSettings, setDiscoveredSetting } from "../settings-builder";
+import { applyLoraSettings, applySamplingSettings, hasDiscoveredSetting, setDiscoveredSetting } from "../settings-builder";
 import { krea2GuidanceScale } from "./krea2-image";
 
 /**
@@ -26,7 +26,9 @@ export function buildKrea2ImageEditSettings(request: ImageEditRequest, defaults:
   // with a single entry the whole frame is the subject and there is nothing to cut.
   if (referencePaths.length) setDiscoveredSetting(settings, schema, defaults, modelType, ["remove_background_images_ref"], 1);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["num_inference_steps", "steps"], request.steps, true);
-  setDiscoveredSetting(settings, schema, defaults, modelType, ["guidance_scale", "cfg_scale"], krea2GuidanceScale(request.guidanceScale, modelType), request.guidanceScale !== undefined);
+  if (hasDiscoveredSetting(schema, defaults, ["guidance_scale", "cfg_scale"])) {
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["guidance_scale", "cfg_scale"], krea2GuidanceScale(request.guidanceScale, modelType), request.guidanceScale !== undefined);
+  }
   applySamplingSettings(settings, schema, defaults, modelType, request);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["resolution", "size"], request.resolution);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["seed"], request.seed);

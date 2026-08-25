@@ -1,6 +1,6 @@
 import type { ImageCreateRequest } from "@/lib/requests";
 import { hasKrea2DistilledMarker } from "../image-guidance";
-import { applyLoraSettings, applySamplingSettings, setDiscoveredSetting } from "../settings-builder";
+import { applyLoraSettings, applySamplingSettings, hasDiscoveredSetting, setDiscoveredSetting } from "../settings-builder";
 
 /**
  * Krea 2 RAW and Turbo render from text alone. Unlike Qwen and Flux they are
@@ -25,7 +25,9 @@ export function buildKrea2ImageSettings(request: ImageCreateRequest, defaults: R
   setDiscoveredSetting(settings, schema, defaults, modelType, ["resolution", "size"], request.resolution);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["seed"], request.seed);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["num_inference_steps", "steps"], request.steps, true);
-  setDiscoveredSetting(settings, schema, defaults, modelType, ["guidance_scale", "cfg_scale"], krea2GuidanceScale(request.guidanceScale, modelType), request.guidanceScale !== undefined);
+  if (hasDiscoveredSetting(schema, defaults, ["guidance_scale", "cfg_scale"])) {
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["guidance_scale", "cfg_scale"], krea2GuidanceScale(request.guidanceScale, modelType), request.guidanceScale !== undefined);
+  }
   applySamplingSettings(settings, schema, defaults, modelType, request);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["count", "num_outputs", "batch_size"], request.count === 1 ? undefined : request.count);
   applyLoraSettings(settings, schema, defaults, modelType, request.loras);

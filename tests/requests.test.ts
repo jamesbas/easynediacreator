@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { countReferences, DEFAULT_NEGATIVE_PROMPT, imageCreateRequestSchema, imageEditRequestSchema, videoCreateRequestSchema } from "@/lib/requests";
 
 describe("generation request validation", () => {
+  it("normalizes multiline prompts into one paragraph for Wan2GP", () => {
+    const prompt = "First paragraph.\r\n\r\n  Second paragraph.\nThird line.";
+    const expected = "First paragraph. Second paragraph. Third line.";
+    expect(imageCreateRequestSchema.parse({ prompt, modelKey: "qwen-image" }).prompt).toBe(expected);
+    expect(imageEditRequestSchema.parse({ prompt, modelKey: "qwen-image-edit" }).prompt).toBe(expected);
+    expect(videoCreateRequestSchema.parse({ prompt, modelKey: "minimax_video_fixture" }).prompt).toBe(expected);
+  });
+
   it("defaults image generation and applies broad transport safety limits", () => {
     const base = { prompt: "test", modelKey: "qwen-image", count: 1 };
     expect(imageCreateRequestSchema.parse(base)).toMatchObject({ steps: 20, negativePrompt: DEFAULT_NEGATIVE_PROMPT });

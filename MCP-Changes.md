@@ -27,6 +27,9 @@ No generation, cancellation, upload, post-processing, file, or other mutating op
 | Video model scope | The application treated Create Video as one configured LTX-2 mapping. | The MCP catalog contains independently available video models from multiple families, each with its own exact `model_type`, schema, defaults, and capabilities. | A family-specific rule hides usable non-LTX models and other installed checkpoints. |
 | Video inputs | The application always required a start image and assumed an optional end image. | Video metadata independently advertises `text_to_video`, `image_to_video`, and `media_inputs.image.start`/`end`. | Text-to-video must work without an image, and image controls must follow the selected model's capabilities. |
 | Video settings | The application required LTX-oriented fields such as `negative_prompt` and `input_video_strength`. | Setting availability differs by model; current MiniMax defaults omit both fields while still exposing valid video generation controls. | Requiring or submitting unsupported optional settings breaks otherwise usable models. |
+| Image mode | Shared image creation required `image_mode`. | Current Flux Klein and current Qwen contracts can omit `image_mode` while exposing prompt/reference behavior through other fields and capabilities. | Requiring `image_mode` prevents valid text-to-image generation before submission. |
+| Image guidance | Image workflows always displayed and submitted a fallback CFG value. | Current distilled Flux Klein omits CFG; Flux Klein Base publishes it. Krea 2 Turbo Edit reports `guidance_max_phases: 0` and omits `guidance_scale`. | A fallback CFG control can turn an intentionally disabled setting into a schema error. |
+| Multiline prompts | A user-entered prompt could contain paragraphs and line feeds. | With `multi_prompts_gen_type: "PG"`, Wan2GP parses prompt lines as separate generation requests, while this app submits one generation task. | A multiline prompt fails unless line breaks are joined or the mode is changed to `FG`. |
 
 ## Model discovery
 
@@ -210,6 +213,48 @@ The adapter chooses this path only when `image_guide` is explicitly present in d
 
 Current Qwen defaults also omit `image_mode`, `image_guide`, `image_refs_relative_size`, and `remove_background_images_ref`. The latter two are now best-effort optional settings rather than required fields.
 
+## Optional image settings
+
+### Flux Klein `image_mode`
+
+The locally available `flux2_klein_9b` contract does not expose `image_mode` in defaults, setting declarations, or its full definition. It does expose the fields needed by the current image workflow, including prompt fields, `image_prompt_type`, `video_prompt_type`, resolution, inference steps, memory profile, and LoRA settings. Its metadata separately advertises text-to-image, reference-image, control-image, and mask capabilities.
+
+The absence of `image_mode` is therefore not evidence that Flux image creation is unsupported. Clients should clear or set `image_mode` only when it is advertised, rather than treating it as a universal image-generation discriminator.
+
+This also applies to current Qwen paths that omit `image_mode`. Legacy schemas that explicitly publish `image_mode` continue to receive it.
+
+### Distilled models with no CFG field
+
+The same live inspection found different guidance contracts among related checkpoints:
+
+- `flux2_klein_9b` omits `guidance_scale`, `cfg_scale`, and guidance phases;
+- `flux2_klein_base_9b` publishes `guidance_scale` and `guidance_phases`;
+- `krea2_turbo_edit` publishes `guidance_max_phases: 0` and omits both `guidance_scale` and `cfg_scale`.
+
+For Krea Turbo, `guidance_max_phases: 0` means CFG is disabled; it does not mean the client must serialize `guidance_scale: 0`. A UI fallback of zero still causes a schema error when the field itself is absent.
+
+Easy Media Generator now derives CFG visibility from actual setting presence. It omits `guidanceScale` from requests and generated settings when the selected model does not expose a CFG field. RAW/Base checkpoints that publish guidance retain their discovered control and value.
+
+## Multiline prompt handling
+
+Wan2GP can interpret line breaks as generation boundaries. In the observed failure, the inherited setting `multi_prompts_gen_type: "PG"` parsed a four-paragraph prompt into four generation requests, but Easy Media Generator had submitted one task. Wan2GP rejected that mismatch and suggested separate tasks or `FG` when the lines belong to one prompt.
+
+Easy Media Generator treats the prompt textarea as one prompt regardless of visual paragraphs. Before validation and again at the outbound queue boundary, it replaces CRLF/LF sequences and surrounding indentation with one space. For example:
+
+```text
+First paragraph.
+
+Second paragraph.
+```
+
+is sent as:
+
+```text
+First paragraph. Second paragraph.
+```
+
+The queue-level normalization also covers retries created before the request-schema normalization and direct internal service calls. Negative prompts are left unchanged because the observed Wan2GP task splitting applies to the primary prompt.
+
 ## LoRA discovery
 
 ### Native tool now available
@@ -304,10 +349,13 @@ The fixes are implemented in:
 - `lib/wan-gp/schemas.ts`: structured-result normalization, compact model-definition projection, and safe relative LoRA identifiers;
 - `lib/wan-gp/adapters/qwen-image-edit.ts`: current ordered references plus legacy `image_guide` compatibility;
 - `lib/wan-gp/adapters/video.ts`: schema-driven video payloads for text-to-video and optional start/end images across model families;
-- `lib/wan-gp/settings-builder.ts`: separation of explicitly advertised settings from capability-inferred attachment keys;
+- `lib/wan-gp/settings-builder.ts`: separation of explicitly advertised settings from capability-inferred attachment keys and optional shared `image_mode` handling;
+- `lib/wan-gp/generation-controls.ts`: CFG controls only when the selected model publishes a guidance setting;
+- `lib/wan-gp/adapters/krea2-image.ts` and `lib/wan-gp/adapters/krea2-image-edit.ts`: omit CFG when Krea Turbo disables guidance phases;
+- `lib/wan-gp/prompt.ts`, `lib/requests.ts`, and `lib/services/job-runner.ts`: normalize user prompt line breaks at request and outbound retry boundaries;
 - `lib/wan-gp/discovery.ts`: schema-dependent source-image reference-slot accounting and independent discovery of every locally usable video model;
 - `lib/services/video-create-service.ts`: capability validation and exact video-model routing;
-- `app/create-video/page.tsx` and `components/forms/video-create-form.tsx`: model-specific video controls and optional image inputs.
+- image and video form components: submit only controls exposed by the selected model contract.
 
 Regression coverage was added for:
 
@@ -319,17 +367,20 @@ Regression coverage was added for:
 - independent LTX and MiniMax fixture discovery;
 - text-to-video submission without a start image;
 - rejection of image inputs unsupported by the selected model;
-- live Qwen, LTX, and non-LTX video settings against the current server.
+- current Flux Klein creation without `image_mode` or CFG;
+- current Krea Turbo Edit without CFG serialization;
+- multiline prompts normalized to one outbound generation prompt;
+- live Qwen, Flux, Krea, LTX, and non-LTX video settings against the current server.
 
 ## Validation results
 
 The completed changes were validated with:
 
-- read-only live Wan2GP MCP suite: 5 passed;
-- normal unit and integration suite: 111 passed, 5 skipped;
-- Playwright desktop and mobile suite: 19 passed;
+- read-only live Wan2GP MCP suite: 7 passed;
+- normal unit and integration suite: 119 passed, 7 skipped;
+- Playwright desktop and mobile suite: 20 passed;
 - TypeScript typecheck: passed;
 - ESLint: passed;
 - Next.js production build: passed.
 
-The live validation confirmed that configured Qwen and LTX models are discoverable beyond the old first page, current LoRA catalogs are readable, LTX settings use frame-based duration, Qwen source-plus-reference settings use the current ordered-reference contract, and a non-LTX video model can be independently discovered and adapted for text-to-video without image fields.
+The live validation confirmed that configured image and video models are discoverable beyond the old first page, current LoRA catalogs are readable, LTX settings use frame-based duration, Qwen source-plus-reference settings use the current ordered-reference contract, a non-LTX video model can be independently adapted for text-to-video, Flux Klein can be built without `image_mode` or CFG, and Krea Turbo Edit can be built without a CFG field.

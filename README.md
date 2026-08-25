@@ -87,6 +87,7 @@ Create Image, Edit Image, and Create Video derive supported resolutions, step an
 - Solver and scheduler selectors appear only when WanGP publishes concrete choices for the selected model.
 - Labeled WanGP choices retain their display label while submitting the corresponding setting value.
 - The server validates every submitted value against the same normalized model contract before calling `wangp_generate`.
+- Prompt textareas accept paragraphs; CRLF/LF breaks are joined with spaces before submission so Wan2GP receives one generation prompt even when `multi_prompts_gen_type` is `PG`.
 
 Older or partially serializable WanGP schemas fall back to the app's existing conservative ranges and selected-model defaults. A missing solver or scheduler catalog hides that selector rather than guessing unsupported values. Use **Refresh models** after changing models or WanGP configuration.
 

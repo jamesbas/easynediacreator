@@ -81,7 +81,7 @@ export function applySamplingSettings(target: Record<string, unknown>, schema: R
 export function commonImageSettings(request: ImageCreateRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string, referencePaths: string[] = []) {
   if (Object.keys(request.advanced).length) throw new Error("The selected model does not allow these advanced settings.");
   const settings = { ...defaults };
-  setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mode"], 1, true);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mode"], 1);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["image_prompt_type"], "", true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["image_guide"], null);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mask"], null);

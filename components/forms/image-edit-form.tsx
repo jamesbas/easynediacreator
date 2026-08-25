@@ -310,7 +310,7 @@ export function ImageEditForm({ models, assets, characters, defaultModel, initia
             modelKey,
             resolution: data.get("resolution") || undefined,
             steps,
-            guidanceScale: effectiveGuidance,
+            guidanceScale: selected?.controls.guidance ? effectiveGuidance : undefined,
             sampleSolver: sampleSolver || undefined,
             scheduler: scheduler || undefined,
             seed: data.get("seed") ? Number(data.get("seed")) : undefined,

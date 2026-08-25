@@ -35,11 +35,12 @@ export class FakeWanGpClient implements WanGpClient {
     if (model.output === "video") return { prompt: "", ...(model.family === "ltx2" ? { negative_prompt: "", input_video_strength: 0.85 } : {}), resolution: "1280x720", duration_seconds: 15, force_fps: 24, num_inference_steps: 8, guidance_scale: 3, sample_solver: "distilled_8_steps", scheduler_type: "normal" };
     // Krea 2 Turbo is step-distilled and refuses guidance, mirroring WanGP's own defaults.
     const distilled = model.family === "krea2" && /turbo/i.test(model.name);
-    const guidance = model.family === "krea2" ? (distilled ? 0 : 3.5) : model.family === "qwen" ? 4 : 5;
-    return { resolution: "1024x1024", count: 1, num_inference_steps: distilled ? 8 : 20, guidance_scale: guidance, sample_solver: "euler", scheduler_type: "normal" };
+    const guidance = model.family === "krea2" ? (distilled ? undefined : 3.5) : model.family === "qwen" ? 4 : model.family === "flux" ? undefined : 5;
+    return { resolution: "1024x1024", count: 1, num_inference_steps: distilled ? 8 : 20, ...(guidance === undefined ? {} : { guidance_scale: guidance }), sample_solver: "euler", scheduler_type: "normal" };
   }
   async getModelSchema(modelType: string): Promise<Record<string, unknown>> {
     const model = this.requireModel(modelType);
+    const supportsGuidance = model.family !== "flux" && !(model.family === "krea2" && /turbo/i.test(model.name));
     const resolutions = model.output === "video" ? [["Landscape 720p", "1280x720"], ["Portrait 720p", "720x1280"]] : [["Square", "1024x1024"], ["Landscape", "1344x768"], ["Portrait", "768x1344"]];
     const sampleSolvers = model.output === "video" ? [["Distilled 8 Steps", "distilled_8_steps"], ["Euler", "euler"], ["HQ", "res2s"]] : [["Euler", "euler"], ["DPM++", "dpm++"], ["Lightning", "lightning"]];
     return {
@@ -47,7 +48,7 @@ export class FakeWanGpClient implements WanGpClient {
       setting_values: { sample_solver: { choices: sampleSolvers }, scheduler_type: { choices: [["Normal", "normal"], ["Karras", "karras"]] } },
       properties: {
         num_inference_steps: { min: 1, max: 200, step: 1 },
-        guidance_scale: { min: 0, max: 30, step: 0.1 },
+        ...(supportsGuidance ? { guidance_scale: { min: 0, max: 30, step: 0.1 } } : {}),
         scheduler_type: { choices: [["Normal", "normal"], ["Karras", "karras"]] },
         ...(model.output === "video" ? { force_fps: { min: 1, max: 60, step: 1 } } : {}),
       },

@@ -42,4 +42,16 @@ describe("Qwen image-edit settings", () => {
 
     expect(settings).toMatchObject({ image_mode: 1, image_guide: "C:\\input\\source.png", image_refs: ["C:\\input\\reference.png"], image_prompt_type: "", video_prompt_type: "IV" });
   });
+
+  it("supports current text-only edit defaults without image_mode", () => {
+    const settings = buildQwenImageEditSettings(
+      { ...request, sourceAssetId: undefined, referenceUploadIds: [], guidanceScale: undefined },
+      { prompt: "", negative_prompt: "", image_prompt_type: "", video_prompt_type: "", num_inference_steps: 20 },
+      { metadata: { media_inputs: { image: { reference: true } } } },
+      "qwen_image_edit_plus2_20B",
+    );
+
+    expect(settings).toMatchObject({ image_refs: [], image_prompt_type: "", video_prompt_type: "" });
+    expect(settings).not.toHaveProperty("image_mode");
+  });
 });

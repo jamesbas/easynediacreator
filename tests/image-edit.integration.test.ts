@@ -24,6 +24,19 @@ describe("image editing", () => {
     expect(client.getLastSubmissionForTests()?.settings).toMatchObject({ negative_prompt: "blurry, malformed hands", num_inference_steps: 20, guidance_scale: 3, sample_solver: "dpm++", scheduler_type: "karras", video_prompt_type: "KI", image_refs: [upload.path] });
   }, 5000);
 
+  it("sends multiline edit prompts to Wan2GP as one paragraph", async () => {
+    const client = new FakeWanGpClient();
+    setWanGpClientForTests(client);
+    const buffer = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#e3482d" } }).png().toBuffer();
+    const upload = await storeImageUpload(buffer, await validateImageBuffer(buffer));
+
+    await editImage({ sourceUploadId: upload.id, referenceUploadIds: [], referenceAssetIds: [], faceSwap: false, sharpenUnblur: false, prompt: "First paragraph.\n\nSecond paragraph.\r\nThird line.", negativePrompt: "blurry", modelKey: "krea-2-edit", steps: 8, loras: [], advanced: {} });
+    const deadline = Date.now() + 1000;
+    while (!client.getLastSubmissionForTests() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(client.getLastSubmissionForTests()?.settings.prompt).toBe("First paragraph. Second paragraph. Third line.");
+  });
+
   it("rejects edit controls outside the selected model schema", async () => {
     const buffer = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#e3482d" } }).png().toBuffer();
     const upload = await storeImageUpload(buffer, await validateImageBuffer(buffer));

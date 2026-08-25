@@ -116,7 +116,7 @@ export function getGenerationControls(schema: Record<string, unknown>, defaults:
   const defaultResolution = resolutions.some((choice) => choice.value === configuredResolution) ? configuredResolution : resolutions[0]?.value ?? options.fallbackResolution;
   const steps = numericConstraint(schema, defaults, ["num_inference_steps", "steps"], { min: 1, max: 200, step: 1, defaultValue: options.workflow === "video" ? 8 : 20 }, ["steps_slider", "inference_steps_slider"]);
   const guidanceKeys = ["guidance_scale", "cfg_scale"];
-  const guidance = options.workflow === "image" || hasSetting(schema, defaults, guidanceKeys)
+  const guidance = hasSetting(schema, defaults, guidanceKeys)
     ? numericConstraint(schema, defaults, guidanceKeys, { min: 0, max: 30, step: 0.1, defaultValue: 1 }, ["guidance_slider", "guidance_scale_slider"])
     : undefined;
   const solvers = choicesFor(schema, "sample_solver", ["sample_solvers"]);

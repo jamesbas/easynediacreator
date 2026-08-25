@@ -14,6 +14,19 @@ describe("image-create adapters", () => {
     expect(settings).toMatchObject({ image_mode: 1, image_prompt_type: "", video_prompt_type: "", image_guide: null, image_refs: [], image_mask: null, prompt: "Sunset at the beach", resolution: "1024x1024", num_inference_steps: 4, prompt_enhancer: "", override_profile: 4.5, activated_loras: [], loras_multipliers: "" });
   });
 
+  it("supports current Flux Klein defaults without image_mode or guidance", () => {
+    const settings = buildFluxKleinImageSettings(
+      { prompt: "Sunset at the beach", negativePrompt: "blurry", modelKey: "flux-klein-9b", count: 1, steps: 4, loras: [], advanced: {} },
+      { prompt: "", negative_prompt: "", image_prompt_type: "", video_prompt_type: "", prompt_enhancer: "", resolution: "1024x1024", num_inference_steps: 4, override_profile: -1, activated_loras: [], loras_multipliers: "" },
+      { metadata: { media_inputs: { image: { reference: true, control: true, mask: true } }, capabilities: { lora: true } } },
+      "flux2_klein_9b",
+    );
+
+    expect(settings).toMatchObject({ prompt: "Sunset at the beach", image_prompt_type: "", video_prompt_type: "", num_inference_steps: 4, override_profile: 4.5 });
+    expect(settings).not.toHaveProperty("image_mode");
+    expect(settings).not.toHaveProperty("guidance_scale");
+  });
+
   it("submits explicit Qwen Guidance and forces 1 for Lightning LoRAs", () => {
     const defaults = { image_mode: 1, image_prompt_type: "", video_prompt_type: "", prompt: "", negative_prompt: "", guidance_scale: 9, num_inference_steps: 30, activated_loras: [], loras_multipliers: "" };
     const standard = buildQwenImageSettings(

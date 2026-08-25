@@ -62,7 +62,7 @@ test("uses conservative Flux Klein image defaults", async ({ page }) => {
   await page.getByRole("combobox", { name: "Model", exact: true }).selectOption("flux-klein-9b");
   await expect(page.getByLabel("Resolution")).toHaveValue("1024x1024");
   await expect(page.getByRole("spinbutton", { name: "Steps", exact: true })).toHaveValue("4");
-  await expect(page.getByLabel("Guidance (CFG)")).toHaveValue("5");
+  await expect(page.getByLabel("Guidance (CFG)")).toHaveCount(0);
   await expect(page.getByLabel("Resolution").locator("option")).toHaveText(["Square", "Landscape", "Portrait"]);
   await page.getByText("Advanced", { exact: true }).click();
   await expect(page.getByLabel("Solver")).toHaveValue("euler");
@@ -368,4 +368,10 @@ test("submits an edit-model generation with the source image skipped", async ({ 
   expect(submitted[0]).not.toHaveProperty("sourceUploadId");
   expect(submitted[0]).not.toHaveProperty("sourceAssetId");
   expect(submitted[0]).toMatchObject({ prompt: "A fox in fresh snow at golden hour", modelKey: "qwen-image-edit" });
+});
+
+test("hides CFG for Krea 2 Turbo Edit when WanGP disables guidance", async ({ page }) => {
+  await page.goto("/edit-image");
+  await page.getByRole("combobox", { name: "Model", exact: true }).selectOption("krea-2-edit");
+  await expect(page.getByLabel("Guidance (CFG)")).toHaveCount(0);
 });

@@ -27,7 +27,7 @@ export function buildQwenImageEditSettings(request: ImageEditRequest, defaults: 
   } else {
     // Nothing is being edited, so the checkpoint runs as plain text-to-image and
     // any reference is a person or object rather than the scene.
-    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mode"], 1, true);
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mode"], 1);
     setDiscoveredSetting(settings, schema, defaults, modelType, ["image_guide"], null);
     setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mask"], null);
     setDiscoveredSetting(settings, schema, defaults, modelType, ["image_prompt_type"], "", true);

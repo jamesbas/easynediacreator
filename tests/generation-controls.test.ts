@@ -40,6 +40,14 @@ describe("WanGP generation controls", () => {
     });
   });
 
+  it("hides guidance when the selected model does not publish a CFG setting", () => {
+    expect(getGenerationControls(
+      { model_def: { guidance_max_phases: 0 } },
+      { resolution: "1024x1024", num_inference_steps: 8 },
+      { workflow: "image", fallbackResolutions: ["1024x1024"], fallbackResolution: "1024x1024" },
+    ).guidance).toBeUndefined();
+  });
+
   it("uses WanGP's 1080p choices as the Qwen image fallback", () => {
     const controls = getGenerationControls({}, { resolution: "1920x1088" }, { workflow: "image", fallbackResolutions: getImageFallbackResolutions("qwen-image"), fallbackResolution: "1920x1088" });
     expect(controls.resolutions).toEqual(QWEN_IMAGE_1080P_CHOICES);

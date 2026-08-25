@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CHARACTER_GENDERS } from "@/lib/character-prompt";
+import { normalizeWanGpPrompt } from "@/lib/wan-gp/prompt";
 import { isSafeRelativeLoraIdentifier } from "@/lib/wan-gp/schemas";
 
 export const DEFAULT_NEGATIVE_PROMPT = "blurry, low resolution, pixelated, compression artifacts, deformed anatomy, distorted face, malformed hands, extra limbs, extra fingers, missing fingers, fused fingers, warped proportions, duplicate subjects, text, watermark, logo";
@@ -10,7 +11,7 @@ export const loraSelectionSchema = z.object({
 });
 
 const baseGenerationSchema = z.object({
-  prompt: z.string().trim().min(1, "Enter a prompt.").max(4000),
+  prompt: z.string().trim().min(1, "Enter a prompt.").max(4000).transform(normalizeWanGpPrompt),
   negativePrompt: z.string().trim().max(4000).default(DEFAULT_NEGATIVE_PROMPT),
   modelKey: z.string().min(1),
   resolution: z.string().regex(/^\d{2,5}x\d{2,5}$/).optional(),

@@ -97,6 +97,20 @@ describe("Krea 2", () => {
     expect(settings).toMatchObject({ image_refs: ["C:\\media\\source.png"], remove_background_images_ref: 0 });
   });
 
+  it("omits CFG when the Turbo Edit contract disables guidance phases", () => {
+    const settings = buildKrea2ImageEditSettings(
+      { prompt: "Make the coat red", negativePrompt: "", modelKey: "krea-2-edit", steps: 8, guidanceScale: 0, faceSwap: false, sharpenUnblur: false, loras: [], advanced: {} },
+      { prompt: "", negative_prompt: "", image_prompt_type: "", video_prompt_type: "", num_inference_steps: 8, activated_loras: [], loras_multipliers: "" },
+      { metadata: { media_inputs: { image: { reference: true } }, capabilities: { lora: true } }, model_def: { guidance_max_phases: 0 } },
+      "krea2_turbo_edit",
+      "C:\\media\\source.png",
+    );
+
+    expect(settings).toMatchObject({ image_refs: ["C:\\media\\source.png"], video_prompt_type: "KI", num_inference_steps: 8 });
+    expect(settings).not.toHaveProperty("guidance_scale");
+    expect(settings).not.toHaveProperty("cfg_scale");
+  });
+
   it("refuses reference images on the text-to-image checkpoints", async () => {
     const upload = await uploadFixture();
     await expect(createImage({ prompt: "A fox", negativePrompt: "", modelKey: "krea-2", count: 1, steps: 8, loras: [], advanced: {}, referenceUploadIds: [upload.id] }))

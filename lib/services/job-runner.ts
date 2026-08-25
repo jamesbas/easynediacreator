@@ -2,6 +2,7 @@ import { config } from "@/lib/config";
 import { getJob, updateJob } from "@/lib/runtime/job-registry";
 import { registerOutput } from "@/lib/runtime/output-registry";
 import { getWanGpClient } from "@/lib/wan-gp";
+import { normalizeWanGpPromptSettings } from "@/lib/wan-gp/prompt";
 import { logger } from "@/lib/telemetry";
 
 type QueueItem = { jobId: string; modelType: string; settings: Record<string, unknown> };
@@ -11,9 +12,10 @@ function errorDetails(error: unknown) { return error instanceof Error ? { name: 
 
 export function enqueueJob(item: QueueItem) {
   if (queue().length >= config.MAX_QUEUED_JOBS) throw new Error("Job queue is full.");
+  const normalizedItem = { ...item, settings: normalizeWanGpPromptSettings(item.settings) };
   state.easyMediaRecipes ??= new Map();
-  state.easyMediaRecipes.set(item.jobId, item);
-  queue().push(item);
+  state.easyMediaRecipes.set(item.jobId, normalizedItem);
+  queue().push(normalizedItem);
   logger.info({ event: "job.created", jobId: item.jobId }, "Generation job queued");
   void processQueue();
 }
