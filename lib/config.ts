@@ -18,7 +18,6 @@ const envSchema = z.object({
   WANGP_CLIENT_MODE: z.enum(["fake", "live"]).default("fake"),
   ENABLED_IMAGE_CREATE_MODELS: z.string().default("qwen-image,flux-klein-9b,krea-2"),
   ENABLED_IMAGE_EDIT_MODELS: z.string().default("qwen-image-edit,flux-klein-9b,krea-2-edit"),
-  ENABLED_VIDEO_MODELS: z.string().default("ltx-2"),
   DEFAULT_IMAGE_CREATE_MODEL: z.string().default("qwen-image"),
   DEFAULT_IMAGE_EDIT_MODEL: z.string().default("qwen-image-edit"),
   DEFAULT_VIDEO_MODEL: z.string().default("ltx-2"),
@@ -47,6 +46,5 @@ export const config = Object.freeze({
   enabledModels: {
     imageCreate: list(env.ENABLED_IMAGE_CREATE_MODELS),
     imageEdit: list(env.ENABLED_IMAGE_EDIT_MODELS),
-    videoCreate: list(env.ENABLED_VIDEO_MODELS),
   },
 });

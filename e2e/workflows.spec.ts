@@ -165,7 +165,7 @@ test("configures and submits a face-swap edit", async ({ page }) => {
   for (const request of submitted) expect(request).toMatchObject({ referenceUploadIds: [referenceUploadId], referenceAssetIds: [], faceSwap: true, prompt: FACE_SWAP_PROMPT, modelKey: "qwen-image-edit", steps: 4, loras: [] });
 });
 
-test("generates and serves an LTX-2 video", async ({ page }) => {
+test("generates and serves a video from a start image", async ({ page }) => {
   const prompt = "A slow cinematic push toward the horizon";
   await page.goto("/create-video");
   await expect(page.getByLabel("Duration")).toHaveValue("15");
@@ -184,7 +184,7 @@ test("generates and serves an LTX-2 video", async ({ page }) => {
   await page.getByText("Advanced", { exact: true }).click();
   await page.getByLabel("Solver").selectOption("euler");
   await page.getByLabel("Scheduler").selectOption("karras");
-  await page.getByRole("group", { name: "Start image *" }).locator('input[type="file"]').setInputFiles({ name: "start.png", mimeType: "image/png", buffer: await png("#dda928") });
+  await page.getByRole("group", { name: "Start image" }).locator('input[type="file"]').setInputFiles({ name: "start.png", mimeType: "image/png", buffer: await png("#dda928") });
   await page.getByLabel("Video prompt").fill(prompt);
   await page.getByRole("button", { name: "Add LoRA" }).click();
   await page.locator('select[name="loraName"]').selectOption("cinematic-motion.safetensors");
@@ -218,6 +218,25 @@ test("generates and serves an LTX-2 video", async ({ page }) => {
   await expect(page.locator("video")).toHaveCount(0);
 });
 
+test("submits text-to-video with another discovered model", async ({ page }) => {
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/api/jobs/video-create", async (route) => {
+    submitted = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ job: { id: crypto.randomUUID() } }) });
+  });
+  await page.goto("/create-video");
+  await page.getByLabel("Video model").selectOption("minimax_video_fixture");
+  await expect(page.getByRole("group", { name: "Start image" })).toHaveAttribute("disabled", "");
+  await expect(page.getByRole("slider", { name: "Start image / source strength" })).toHaveCount(0);
+  await page.getByLabel("Video prompt").fill("Clouds rolling over a mountain ridge");
+  await expect(page.getByRole("button", { name: "Generate video" })).toBeEnabled();
+  await page.getByRole("button", { name: "Generate video" }).click();
+
+  expect(submitted).toMatchObject({ modelKey: "minimax_video_fixture", prompt: "Clouds rolling over a mountain ridge" });
+  expect(submitted).not.toHaveProperty("startUploadId");
+  expect(submitted).not.toHaveProperty("startAssetId");
+});
+
 test("cancels an active generation", async ({ page }) => {
   const prompt = "A generation to cancel";
   await page.goto("/create-image");
@@ -237,9 +256,10 @@ test("shows exact WanGP model selections in Settings", async ({ page }) => {
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Approved models", exact: true })).toBeVisible();
   const selectors = page.getByLabel("WanGP model");
-  await expect(selectors).toHaveCount(7);
+  await expect(selectors).toHaveCount(6);
   await expect(page.getByText(/qwen_image_edit_fixture/)).toBeVisible();
   await expect(page.getByText(/ltx2_fixture/)).toBeVisible();
+  await expect(page.getByText(/minimax_video_fixture/)).toBeVisible();
   // Krea 2 ships RAW and Turbo per workflow; Turbo is preferred, and both stay
   // pinnable here.
   await expect(page.getByText(/krea2_turbo_fixture/)).toBeVisible();

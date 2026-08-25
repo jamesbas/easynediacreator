@@ -92,11 +92,8 @@ describe("image editing", () => {
     while (!client.getLastSubmissionForTests() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
     expect(client.getLastSubmissionForTests()?.settings).toMatchObject({
       prompt: FACE_SWAP_PROMPT,
-      image_mode: 1,
-      image_guide: source.path,
-      image_refs: [reference.path],
-      image_prompt_type: "",
-      video_prompt_type: "IV",
+      image_refs: [source.path, reference.path],
+      video_prompt_type: "KI",
       image_refs_relative_size: 50,
       remove_background_images_ref: 1,
       num_inference_steps: 4,

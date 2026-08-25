@@ -1,7 +1,7 @@
 import type { ImageEditRequest } from "@/lib/requests";
 import { FACE_SWAP_LORAS, faceSwapPrompt, FACE_SWAP_STEPS } from "@/lib/face-swap-preset";
-import { REFERENCE_SUBJECTS_ONLY } from "../reference-images";
-import { applyLoraSettings, applySamplingSettings, setDiscoveredSetting } from "../settings-builder";
+import { REFERENCE_LEAD_WITH_SCENE, REFERENCE_SUBJECTS_ONLY } from "../reference-images";
+import { applyLoraSettings, applySamplingSettings, hasExplicitSetting, setDiscoveredSetting } from "../settings-builder";
 
 export function buildQwenImageEditSettings(request: ImageEditRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string, sourcePath?: string, referencePaths: string[] = []) {
   if (Object.keys(request.advanced).length) throw new Error("The selected model does not allow these advanced settings.");
@@ -9,13 +9,18 @@ export function buildQwenImageEditSettings(request: ImageEditRequest, defaults: 
   setDiscoveredSetting(settings, schema, defaults, modelType, ["prompt", "text_prompt", "instruction"], request.faceSwap ? faceSwapPrompt(request.faceSwapGender) : request.prompt, true);
   setDiscoveredSetting(settings, schema, defaults, modelType, ["negative_prompt"], request.negativePrompt, true);
   if (sourcePath && referencePaths.length) {
-    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mode"], 1, true);
-    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_guide"], sourcePath, true);
-    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], referencePaths, true);
-    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_prompt_type"], "", true);
-    setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], "IV", true);
-    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs_relative_size"], 50, true);
-    setDiscoveredSetting(settings, schema, defaults, modelType, ["remove_background_images_ref"], 1, true);
+    if (hasExplicitSetting(schema, defaults, ["image_guide"])) {
+      setDiscoveredSetting(settings, schema, defaults, modelType, ["image_mode"], 1, true);
+      setDiscoveredSetting(settings, schema, defaults, modelType, ["image_guide"], sourcePath, true);
+      setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], referencePaths, true);
+      setDiscoveredSetting(settings, schema, defaults, modelType, ["image_prompt_type"], "", true);
+      setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], "IV", true);
+    } else {
+      setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], [sourcePath, ...referencePaths], true);
+      setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], REFERENCE_LEAD_WITH_SCENE, true);
+    }
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs_relative_size"], 50);
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["remove_background_images_ref"], 1);
   } else if (sourcePath) {
     setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], [sourcePath], true);
     setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], "KI", true);
@@ -29,8 +34,8 @@ export function buildQwenImageEditSettings(request: ImageEditRequest, defaults: 
     setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], referencePaths, true);
     setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], referencePaths.length ? REFERENCE_SUBJECTS_ONLY : "", true);
     if (referencePaths.length) {
-      setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs_relative_size"], 50, true);
-      setDiscoveredSetting(settings, schema, defaults, modelType, ["remove_background_images_ref"], 1, true);
+      setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs_relative_size"], 50);
+      setDiscoveredSetting(settings, schema, defaults, modelType, ["remove_background_images_ref"], 1);
     }
   }
   setDiscoveredSetting(settings, schema, defaults, modelType, ["num_inference_steps", "steps"], request.faceSwap ? FACE_SWAP_STEPS : request.steps, true);

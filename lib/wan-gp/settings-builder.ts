@@ -1,7 +1,7 @@
 import type { ImageCreateRequest, LoraSelection } from "@/lib/requests";
 import { REFERENCE_SUBJECTS_ONLY } from "./reference-images";
 
-function knownKeys(schema: Record<string, unknown>, defaults: Record<string, unknown>) {
+function explicitKeys(schema: Record<string, unknown>, defaults: Record<string, unknown>) {
   const keys = new Set(Object.keys(defaults));
   for (const containerName of ["properties", "settings"]) {
     const container = schema[containerName];
@@ -14,6 +14,12 @@ function knownKeys(schema: Record<string, unknown>, defaults: Record<string, unk
   for (const settingValues of [schema.setting_values, metadata.setting_values]) {
     if (settingValues && typeof settingValues === "object" && !Array.isArray(settingValues)) Object.keys(settingValues).forEach((key) => keys.add(key));
   }
+  return keys;
+}
+
+function knownKeys(schema: Record<string, unknown>, defaults: Record<string, unknown>) {
+  const keys = explicitKeys(schema, defaults);
+  const metadata = schema.metadata && typeof schema.metadata === "object" && !Array.isArray(schema.metadata) ? schema.metadata as Record<string, unknown> : {};
   const mediaInputs = metadata.media_inputs && typeof metadata.media_inputs === "object" && !Array.isArray(metadata.media_inputs) ? metadata.media_inputs as Record<string, unknown> : {};
   const imageInputs = mediaInputs.image && typeof mediaInputs.image === "object" && !Array.isArray(mediaInputs.image) ? mediaInputs.image as Record<string, unknown> : {};
   if (imageInputs.start === true) keys.add("image_start");
@@ -29,9 +35,19 @@ function knownKeys(schema: Record<string, unknown>, defaults: Record<string, unk
   return keys;
 }
 
+export function hasExplicitSetting(schema: Record<string, unknown>, defaults: Record<string, unknown>, candidates: string[]) {
+  const keys = explicitKeys(schema, defaults);
+  return candidates.some((candidate) => keys.has(candidate));
+}
+
+export function hasDiscoveredSetting(schema: Record<string, unknown>, defaults: Record<string, unknown>, candidates: string[]) {
+  const keys = knownKeys(schema, defaults);
+  return candidates.some((candidate) => keys.has(candidate));
+}
+
 export function setDiscoveredSetting(target: Record<string, unknown>, schema: Record<string, unknown>, defaults: Record<string, unknown>, modelType: string, candidates: string[], value: unknown, required = false) {
   if (value === undefined) return undefined;
-  const key = candidates.find((candidate) => knownKeys(schema, defaults).has(candidate)) ?? (modelType.endsWith("_fixture") ? candidates[0] : undefined);
+  const key = candidates.find((candidate) => hasDiscoveredSetting(schema, defaults, [candidate])) ?? (modelType.endsWith("_fixture") ? candidates[0] : undefined);
   if (!key) { if (required) throw new Error(`The installed WanGP schema does not expose a supported ${candidates[0]} setting.`); return undefined; }
   target[key] = value;
   return key;
@@ -49,8 +65,12 @@ export function durationToFrameCount(durationSeconds: number, fps: number) {
 
 export function applyVideoDuration(target: Record<string, unknown>, schema: Record<string, unknown>, defaults: Record<string, unknown>, modelType: string, durationSeconds: number | undefined, fps: number) {
   if (durationSeconds === undefined) return;
-  setDiscoveredSetting(target, schema, defaults, modelType, ["video_length", "num_frames", "frame_num"], durationToFrameCount(durationSeconds, fps), true);
-  setDiscoveredSetting(target, schema, defaults, modelType, ["duration_seconds"], 0);
+  if (modelType.toLowerCase().startsWith("ltx2") || hasDiscoveredSetting(schema, defaults, ["video_length", "num_frames", "frame_num"])) {
+    setDiscoveredSetting(target, schema, defaults, modelType, ["video_length", "num_frames", "frame_num"], durationToFrameCount(durationSeconds, fps), true);
+    setDiscoveredSetting(target, schema, defaults, modelType, ["duration_seconds"], 0);
+    return;
+  }
+  setDiscoveredSetting(target, schema, defaults, modelType, ["duration_seconds"], durationSeconds, true);
 }
 
 export function applySamplingSettings(target: Record<string, unknown>, schema: Record<string, unknown>, defaults: Record<string, unknown>, modelType: string, request: { sampleSolver?: string; scheduler?: string }) {

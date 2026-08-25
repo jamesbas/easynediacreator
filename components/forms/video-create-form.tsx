@@ -17,6 +17,10 @@ type FormModel = {
   availability: string;
   controls: GenerationControls;
   defaultSourceStrength: number;
+  supportsSourceStrength: boolean;
+  supportsNegativePrompt: boolean;
+  supportsStartFrame: boolean;
+  requiresStartFrame: boolean;
   supportsEndFrame: boolean;
   loraCatalog: LoraCatalog;
   defaultLoras: { name: string; strength: number }[];
@@ -27,7 +31,8 @@ type PickedImage = { file?: File; uploadId?: string; assetId?: string; preview?:
 export function VideoCreateForm({ models, assets, defaultModel, characters, initialStartId, initialRequest }: { models: FormModel[]; assets: AssetOption[]; defaultModel: string; characters: CharacterSummary[]; initialStartId?: string; initialRequest?: VideoCreateRequest }) {
   const router = useRouter();
   const promptRef = useRef<HTMLTextAreaElement>(null);
-  const reusableModel = models.find((model) => model.key === initialRequest?.modelKey && model.availability === "available");
+  const reusableModel = models.find((model) => model.key === initialRequest?.modelKey && model.availability === "available")
+    ?? (initialRequest?.modelKey === "ltx-2" ? models.find((model) => model.key.toLowerCase().startsWith("ltx2") && model.availability === "available") : undefined);
   const [modelKey, setModelKey] = useState(reusableModel?.key ?? models.find((model) => model.key === defaultModel && model.availability === "available")?.key ?? models.find((model) => model.availability === "available")?.key ?? "");
   const selected = models.find((model) => model.key === modelKey);
   const [prompt, setPrompt] = useState(initialRequest?.prompt ?? "");
@@ -63,17 +68,17 @@ export function VideoCreateForm({ models, assets, defaultModel, characters, init
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          startUploadId,
-          startAssetId: startUploadId ? undefined : start.assetId,
-          endUploadId,
-          endAssetId: endUploadId ? undefined : end.assetId,
+          startUploadId: selected?.supportsStartFrame ? startUploadId : undefined,
+          startAssetId: selected?.supportsStartFrame && !startUploadId ? start.assetId : undefined,
+          endUploadId: selected?.supportsEndFrame ? endUploadId : undefined,
+          endAssetId: selected?.supportsEndFrame && !endUploadId ? end.assetId : undefined,
           prompt: data.get("prompt"),
-          negativePrompt: data.get("negativePrompt"),
+          negativePrompt: selected?.supportsNegativePrompt ? data.get("negativePrompt") : undefined,
           modelKey,
           resolution: data.get("resolution") || undefined,
           durationSeconds,
-          fps,
-          sourceStrength: Number(data.get("sourceStrength")),
+          fps: selected?.controls.fps ? fps : undefined,
+          sourceStrength: selected?.supportsSourceStrength && selected.supportsStartFrame ? Number(data.get("sourceStrength")) : undefined,
           steps,
           guidanceScale,
           sampleSolver: sampleSolver || undefined,
@@ -93,22 +98,21 @@ export function VideoCreateForm({ models, assets, defaultModel, characters, init
   }}>
     <div className="space-y-6">
       <section className="grid gap-4 border border-[var(--line)] bg-[var(--surface)] p-5 sm:grid-cols-2 sm:p-7">
-        <ImagePicker label="Start image" required value={start} onChange={setStart} assets={assets} />
+        <ImagePicker label="Start image" required={selected?.requiresStartFrame} value={start} onChange={setStart} assets={assets} disabled={!selected?.supportsStartFrame} />
         <ImagePicker label="End image" value={end} onChange={setEnd} assets={assets} disabled={!selected?.supportsEndFrame} />
       </section>
       <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="video-prompt" className="block text-sm font-bold">Video prompt</label><InsertCharacterButton characters={characters} prompt={prompt} textarea={promptRef} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></div>
         <textarea ref={promptRef} id="video-prompt" name="prompt" required rows={7} maxLength={4000} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe motion, camera movement, pacing, and what changes in the scene..." className="w-full rounded-md border border-[#b8beb7] bg-white p-4 leading-7 outline-none focus:border-[var(--teal)]" />
-        <label htmlFor="video-negative-prompt" className="mb-2 mt-5 block text-sm font-bold">Negative prompt</label>
-        <textarea id="video-negative-prompt" name="negativePrompt" rows={4} maxLength={4000} defaultValue={initialRequest?.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT} className="w-full rounded-md border border-[#b8beb7] bg-white p-4 text-sm leading-6 outline-none focus:border-[var(--teal)]" />
+        {selected?.supportsNegativePrompt ? <><label htmlFor="video-negative-prompt" className="mb-2 mt-5 block text-sm font-bold">Negative prompt</label><textarea id="video-negative-prompt" name="negativePrompt" rows={4} maxLength={4000} defaultValue={initialRequest?.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT} className="w-full rounded-md border border-[#b8beb7] bg-white p-4 text-sm leading-6 outline-none focus:border-[var(--teal)]" /></> : null}
         {error && <p role="alert" className="mt-3 text-sm font-semibold text-[var(--accent)]">{error}</p>}
       </section>
     </div>
     <aside className="space-y-5 border border-[var(--line)] bg-[var(--surface)] p-5">
-      <Control label="LTX-2 model"><select value={modelKey} onChange={(event) => { const next = models.find((model) => model.key === event.target.value); setModelKey(event.target.value); setSourceStrength(next?.defaultSourceStrength ?? 0.85); setDurationSeconds(next?.controls.duration?.defaultValue ?? 15); setFps(next?.controls.fps?.defaultValue ?? 24); setSteps(next?.controls.steps.defaultValue ?? 8); setGuidanceScale(next?.controls.guidance?.defaultValue); setSampleSolver(next?.controls.defaultSolver ?? ""); setScheduler(next?.controls.defaultScheduler ?? ""); setReuseSelections(false); }} className="control"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available"}>{model.displayName}</option>)}</select></Control>
+      <Control label="Video model"><select value={modelKey} onChange={(event) => { const next = models.find((model) => model.key === event.target.value); setModelKey(event.target.value); if (!next?.supportsStartFrame) setStart({}); if (!next?.supportsEndFrame) setEnd({}); setSourceStrength(next?.defaultSourceStrength ?? 0.85); setDurationSeconds(next?.controls.duration?.defaultValue ?? 15); setFps(next?.controls.fps?.defaultValue ?? 24); setSteps(next?.controls.steps.defaultValue ?? 8); setGuidanceScale(next?.controls.guidance?.defaultValue); setSampleSolver(next?.controls.defaultSolver ?? ""); setScheduler(next?.controls.defaultScheduler ?? ""); setReuseSelections(false); }} className="control"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available"}>{model.displayName}</option>)}</select></Control>
       <Control label="Duration"><input className="control" name="duration" type="number" min={selected?.controls.duration?.min ?? 1} max={selected?.controls.duration?.max ?? 20} step={selected?.controls.duration?.step ?? 1} value={durationSeconds} onChange={(event) => setDurationSeconds(Number(event.target.value))} required /></Control>
       <Control label="Resolution"><select key={`resolution-${modelKey}`} name="resolution" defaultValue={reuseSelections ? initialRequest?.resolution ?? selected?.controls.defaultResolution : selected?.controls.defaultResolution} className="control">{(selected?.controls.resolutions ?? [{ label: "1280x720", value: "1280x720" }]).map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></Control>
-      <label className="block"><span className="mb-2 flex items-center justify-between gap-3 text-sm font-bold"><span>Start image / source strength</span><output htmlFor="source-strength">{sourceStrength.toFixed(2)}</output></span><input id="source-strength" aria-label="Start image / source strength" className="w-full accent-[var(--teal)]" name="sourceStrength" type="range" min="0" max="1" step="0.05" value={sourceStrength} onChange={(event) => setSourceStrength(Number(event.target.value))} /></label>
+      {selected?.supportsSourceStrength && selected.supportsStartFrame ? <label className="block"><span className="mb-2 flex items-center justify-between gap-3 text-sm font-bold"><span>Start image / source strength</span><output htmlFor="source-strength">{sourceStrength.toFixed(2)}</output></span><input id="source-strength" aria-label="Start image / source strength" className="w-full accent-[var(--teal)]" name="sourceStrength" type="range" min="0" max="1" step="0.05" value={sourceStrength} onChange={(event) => setSourceStrength(Number(event.target.value))} /></label> : null}
       <Control label="Steps"><input className="control" name="steps" type="number" min={selected?.controls.steps.min ?? 1} max={selected?.controls.steps.max ?? 200} step={selected?.controls.steps.step ?? 1} value={steps} onChange={(event) => setSteps(Number(event.target.value))} required /></Control>
       {selected?.controls.guidance && guidanceScale !== undefined ? <Control label="Guidance (CFG)"><input className="control" name="guidanceScale" type="number" min={selected.controls.guidance.min} max={selected.controls.guidance.max} step={selected.controls.guidance.step} value={guidanceScale} onChange={(event) => setGuidanceScale(Number(event.target.value))} required /></Control> : null}
       <LoraSelector key={modelKey} catalog={selected?.loraCatalog ?? { supported: false, loras: [], reason: "Select a model first." }} initialLoras={reuseSelections ? initialRequest?.loras : selected?.defaultLoras} initialPresetId={reuseSelections ? initialRequest?.loraPresetId : undefined} />
@@ -118,7 +122,7 @@ export function VideoCreateForm({ models, assets, defaultModel, characters, init
         {selected?.controls.schedulers.length ? <Control label="Scheduler"><select className="control" value={scheduler} onChange={(event) => setScheduler(event.target.value)}><option value="">Model default</option>{selected.controls.schedulers.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></Control> : null}
         <Control label="Seed"><input className="control" name="seed" type="number" min="0" max="2147483647" placeholder="Random" defaultValue={initialRequest?.seed} /></Control>
       </div></details>
-      <button disabled={submitting || !modelKey || (!start.file && !start.uploadId && !start.assetId)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-5 font-bold text-white disabled:opacity-50"><Clapperboard size={18} />{submitting ? "Submitting..." : "Generate video"}</button>
+      <button disabled={submitting || !modelKey || Boolean(selected?.requiresStartFrame && !start.file && !start.uploadId && !start.assetId)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-5 font-bold text-white disabled:opacity-50"><Clapperboard size={18} />{submitting ? "Submitting..." : "Generate video"}</button>
     </aside>
     <style jsx>{`.control{width:100%;min-height:44px;border:1px solid #b8beb7;border-radius:6px;background:#fff;padding:0 12px}`}</style>
   </form>;

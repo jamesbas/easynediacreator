@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { modelListSchema, parseLoraCatalog, parseLoraCatalogResponse, parseWanGpJobSnapshot, parseWanGpStructuredContent, parseWanGpTextContent } from "@/lib/wan-gp/schemas";
+import { mergeWanGpModelDefinition, modelListSchema, parseLoraCatalog, parseLoraCatalogResponse, parseWanGpJobSnapshot, parseWanGpStructuredContent, parseWanGpTextContent } from "@/lib/wan-gp/schemas";
 
 describe("WanGP MCP response normalization", () => {
   it("normalizes upstream snake-case model metadata", () => {
@@ -23,8 +23,27 @@ describe("WanGP MCP response normalization", () => {
     expect(parseWanGpStructuredContent(snapshot)).toBe(snapshot);
   });
 
+  it("projects controls moved into the full model definition", () => {
+    expect(mergeWanGpModelDefinition(
+      { metadata: { capabilities: { lora: true } } },
+      { sample_solvers: [["Default", "default"]], guidance_max_phases: 1, URLs: ["not-projected"], metadata: { setting_values: { sample_solver: { choices: [["Default", "default"]] } } } },
+    )).toEqual({
+      metadata: { capabilities: { lora: true }, setting_values: { sample_solver: { choices: [["Default", "default"]] } }, },
+      model_def: { sample_solvers: [["Default", "default"]], guidance_max_phases: 1 },
+    });
+  });
+
   it("extracts safe LoRA filenames from supported catalog shapes", () => {
-    expect(parseLoraCatalog({ loras: ["style.safetensors", { filename: "motion.sft" }, "../unsafe.safetensors"] })).toEqual(["motion.sft", "style.safetensors"]);
+    expect(parseLoraCatalog({ loras: [
+      "style.safetensors",
+      { filename: "motion.sft" },
+      "portraits/editorial.safetensors",
+      "motion\\camera.sft",
+      "../unsafe.safetensors",
+      "nested/../../unsafe.safetensors",
+      "/absolute.safetensors",
+      "C:\\absolute.safetensors",
+    ] })).toEqual(["motion.sft", "motion\\camera.sft", "portraits/editorial.safetensors", "style.safetensors"]);
   });
 
   it("normalizes native typed acceleration presets", () => {

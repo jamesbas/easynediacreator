@@ -3,8 +3,9 @@ import type { ModelOption, WorkflowType } from "@/lib/types";
 import type { WanGpClient, WanGpModelSummary } from "./client";
 import { classifyLoraCatalog } from "./lora-classifier/classify";
 import { REFERENCE_IMAGE_CAPABILITY } from "./reference-images";
+import { hasExplicitSetting } from "./settings-builder";
 
-export type LogicalRule = { key: string; displayName: string; workflowType: WorkflowType; family: string; output: "image" | "video"; requiresImage?: boolean; namePattern?: RegExp; preferredPatterns?: RegExp[]; maxReferenceImages?: number; sourceUsesReferenceSlot?: boolean };
+export type LogicalRule = { key: string; displayName: string; workflowType: WorkflowType; family: string; output: "image" | "video"; requiresImage?: boolean; modelType?: string; namePattern?: RegExp; preferredPatterns?: RegExp[]; maxReferenceImages?: number; sourceUsesReferenceSlot?: boolean };
 
 const rules: LogicalRule[] = [
   { key: "qwen-image", displayName: "Qwen Image", workflowType: "image-create", family: "qwen", output: "image", namePattern: /qwen(?!.*edit)/i, maxReferenceImages: 8 },
@@ -17,11 +18,10 @@ const rules: LogicalRule[] = [
   // Krea 2 Identity Edit conditions on three `image_refs` entries in total, and
   // the image being edited occupies the first when one is supplied.
   { key: "krea-2-edit", displayName: "Krea 2 Identity Edit", workflowType: "image-edit", family: "krea2", output: "image", namePattern: /krea.*edit/i, preferredPatterns: [/turbo/i], maxReferenceImages: 3, sourceUsesReferenceSlot: true },
-  { key: "ltx-2", displayName: "LTX-2", workflowType: "video-create", family: "ltx2", output: "video", requiresImage: true, namePattern: /ltx.?2/i, preferredPatterns: [/distilled.*1\.1/i, /distilled/i] },
 ];
 
 function enabled(rule: LogicalRule) {
-  const keys = rule.workflowType === "image-create" ? config.enabledModels.imageCreate : rule.workflowType === "image-edit" ? config.enabledModels.imageEdit : config.enabledModels.videoCreate;
+  const keys = rule.workflowType === "image-create" ? config.enabledModels.imageCreate : rule.workflowType === "image-edit" ? config.enabledModels.imageEdit : [];
   return keys.includes(rule.key);
 }
 
@@ -47,7 +47,7 @@ export function matchingModels(rule: LogicalRule, models: WanGpModelSummary[]) {
   return models.filter((model) => {
     const family = model.family.toLowerCase();
     const familyMatches = rule.family === "flux" ? family === "flux" || family === "flux2" : family === rule.family;
-    return familyMatches && model.output === rule.output && (!rule.requiresImage || model.inputs.includes("image")) && (!rule.namePattern || rule.namePattern.test(model.name));
+    return familyMatches && model.output === rule.output && (!rule.modelType || model.modelType === rule.modelType) && (!rule.requiresImage || model.inputs.includes("image")) && (!rule.namePattern || rule.namePattern.test(model.name));
   });
 }
 
@@ -72,9 +72,20 @@ export function matchModel(rule: LogicalRule, models: WanGpModelSummary[], prefe
 
 export async function discoverModels(client: WanGpClient, selections: Record<string, string> = {}): Promise<ModelOption[]> {
   const models = [...await client.listModels("image"), ...await client.listModels("video")];
-  return Promise.all(rules.filter(enabled).map(async (rule) => {
+  const videoModels = models.filter((model) => model.output === "video");
+  const preferredVideoModel = selections[`video-create:${config.DEFAULT_VIDEO_MODEL}`] ?? config.DEFAULT_VIDEO_MODEL;
+  const eligibleVideoModels = videoModels.filter((model) => model.availability !== "missing").sort((left, right) => Number(right.modelType === preferredVideoModel) - Number(left.modelType === preferredVideoModel));
+  const dynamicVideoRules: LogicalRule[] = eligibleVideoModels.map((model) => ({
+    key: model.modelType,
+    displayName: model.name,
+    workflowType: "video-create",
+    family: model.family.toLowerCase(),
+    output: "video",
+    modelType: model.modelType,
+  }));
+  return Promise.all([...rules.filter(enabled), ...dynamicVideoRules].map(async (rule) => {
     const matches = matchingModels(rule, models);
-    const candidates = matches.map(({ modelType, name, availability }) => ({ modelType, name, availability }));
+    const candidates = rule.workflowType === "video-create" ? [] : matches.map(({ modelType, name, availability }) => ({ modelType, name, availability }));
     const model = matchModel(rule, models, selections[selectionKey(rule)]);
     if (!model) return { key: rule.key, displayName: rule.displayName, workflowType: rule.workflowType, availability: "missing" as const, reason: "No matching installed WanGP model was found.", schema: {}, defaults: {}, capabilities: [], loraCatalog: { supported: false, loras: [], reason: "Model is not installed." }, candidates };
     const [availability, schema, defaults, metadata, loraCatalog] = await Promise.all([
@@ -85,7 +96,8 @@ export async function discoverModels(client: WanGpClient, selections: Record<str
     // reports `media_inputs` inconsistently and a missed capability silently drops
     // every reference the user attached.
     const capabilities = [...new Set([...getWanGpCapabilities(metadata), ...(rule.maxReferenceImages ? [REFERENCE_IMAGE_CAPABILITY] : [])])];
+    const sourceUsesReferenceSlot = rule.sourceUsesReferenceSlot || (rule.key === "qwen-image-edit" && !hasExplicitSetting(effectiveSchema, defaults, ["image_guide"]));
     const classifiedCatalog = await classifyLoraCatalog({ catalog: loraCatalog, schema: effectiveSchema, metadata, modelType: model.modelType, workflowType: rule.workflowType, profilesRoot: config.WANGP_PROFILES_ROOT, metadataRoot: config.WANGP_LORA_METADATA_ROOT, overridesPath: config.WANGP_LORA_CLASSIFIER_OVERRIDES });
-    return { key: rule.key, displayName: model.name || rule.displayName, workflowType: rule.workflowType, modelType: model.modelType, availability: availability.status, reason: availability.reason, schema: effectiveSchema, defaults, capabilities, maxReferenceImages: rule.maxReferenceImages, sourceUsesReferenceSlot: rule.sourceUsesReferenceSlot, loraCatalog: classifiedCatalog, candidates };
+    return { key: rule.key, displayName: model.name || rule.displayName, workflowType: rule.workflowType, modelType: model.modelType, availability: availability.status, reason: availability.reason, schema: effectiveSchema, defaults, capabilities, maxReferenceImages: rule.maxReferenceImages, sourceUsesReferenceSlot, loraCatalog: classifiedCatalog, candidates };
   }));
 }

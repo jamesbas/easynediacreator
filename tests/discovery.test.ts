@@ -7,7 +7,13 @@ describe("model discovery", () => {
     const models = await discoverModels(new FakeWanGpClient());
     expect(models.find((model) => model.workflowType === "image-create" && model.key === "qwen-image")?.modelType).toBe("qwen_image_fixture");
     expect(models.find((model) => model.workflowType === "image-edit" && model.key === "qwen-image-edit")?.modelType).toBe("qwen_image_edit_fixture");
-    expect(models.find((model) => model.workflowType === "video-create")?.capabilities).toContain("end-frame");
+    expect(models.find((model) => model.workflowType === "video-create" && model.key === "ltx2_fixture")?.capabilities).toContain("end-frame");
+  });
+
+  it("exposes each available video model as an independent workflow option", async () => {
+    const videoModels = (await discoverModels(new FakeWanGpClient())).filter((model) => model.workflowType === "video-create");
+
+    expect(videoModels.map((model) => model.key)).toEqual(["ltx2_fixture", "minimax_video_fixture"]);
   });
 
   it("normalizes current capability and media-input metadata", () => {

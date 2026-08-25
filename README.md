@@ -1,6 +1,6 @@
 # Easy Media Generator
 
-Easy Media Generator is a private, mobile-friendly Next.js interface for a locally hosted WanGP installation. It creates images, edits images, and generates LTX-2 videos without sending prompts or media to a hosted generation service.
+Easy Media Generator is a private, mobile-friendly Next.js interface for a locally hosted WanGP installation. It creates images, edits images, and generates videos without sending prompts or media to a hosted generation service.
 
 Powered by WanGP by DeepBeepMeep.
 
@@ -14,9 +14,9 @@ Powered by WanGP by DeepBeepMeep.
 - Apply the Qwen face-swap preset with its prompt, Lightning accelerator, face LoRA, strengths, and inference settings configured automatically.
 - Apply the exclusive Qwen Sharpen and Unblur preset using `Qwen-Image-Edit-Unblur-Upscale_20.safetensors` at strength 1.
 - Batch Face Swap or Sharpen and Unblur across up to 10 uploaded source images, creating one job per source with shared preset settings.
-- Generate LTX-2 videos from a required start image and optional end image.
+- Generate videos with any locally available WanGP video model, using text and optional start/end images according to each model's capabilities.
 - Choose video duration within the selected model's discovered constraints; the app converts seconds to WanGP's required aligned frame count.
-- Adjust LTX start-image/source strength from 0 to 1 and use the model's discovered inference-step default.
+- Adjust start-image/source strength when the selected model exposes it and use the model's discovered inference-step default.
 - Select multiple model-aligned LoRAs with individual strengths.
 - Select classifier-backed acceleration presets separately from character, style, motion, and other LoRAs.
 - Combine acceleration presets with additional validated content LoRAs; preset LoRAs are applied first.
@@ -76,11 +76,11 @@ WANGP_LORA_CLASSIFIER_OVERRIDES=C:\path\to\EasyMediaGen\data\lora-classifier-ove
 
 When `WANGP_PROFILES_ROOT` and `WANGP_LORA_METADATA_ROOT` are omitted, the app derives them as siblings of `WANGP_LORA_ROOT`. The private classifier override path defaults to `data/lora-classifier-overrides.json` in this project.
 
-Restart the app, open Settings, and select **Refresh models**. Unmatched or unavailable allow-listed models remain disabled. WanGP field names are isolated under `lib/wan-gp/adapters`; verify those mappings against the installed WanGP schema.
+Restart the app, open Settings, and select **Refresh models**. Unmatched or unavailable allow-listed image models remain disabled. Every video model that WanGP reports as locally available is exposed as a separate Create Video option. WanGP field names are isolated under `lib/wan-gp/adapters`; verify those mappings against the installed WanGP schema.
 
 ### Schema-driven generation controls
 
-Create Image, Edit Image, and Create Video derive supported resolutions, step and guidance bounds, solver choices, scheduler choices, FPS, and duration constraints from `wangp_get_model_schema` and `wangp_get_default_settings`.
+Create Image, Edit Image, and Create Video derive supported resolutions, step and guidance bounds, solver choices, scheduler choices, FPS, and duration constraints from `wangp_get_model_schema` and `wangp_get_default_settings`. On current WanGP servers, the app also reads a compact projection from `wangp_get_model` because detailed parameter declarations moved out of the compact schema response.
 
 - Resolution, steps, guidance, and duration are displayed in the main generation settings rail.
 - FPS, solver, scheduler, and seed are displayed under **Advanced**.
@@ -94,7 +94,7 @@ Older or partially serializable WanGP schemas fall back to the app's existing co
 
 Easy Media Generator supports multiple model-aligned LoRAs with individual strengths. If WanGP exposes `wangp_list_lora_presets(model_type)`, `wangp_list_loras(model_type)`, or `wangp_get_loras(model_type)`, the app uses the available native tool. Otherwise it reads model-aligned filenames from `WANGP_LORA_ROOT` without changing WanGP source code. The fallback supports this app's Qwen Image, Flux.2 Klein, and LTX-2 families using WanGP's default LoRA subdirectories.
 
-Only immediate `.safetensors` and `.sft` filenames are exposed. Generation passes validated selections using WanGP's documented `activated_loras` and space-separated `loras_multipliers` settings. See [docs/wan-gp-lora-mcp.md](docs/wan-gp-lora-mcp.md) for behavior and custom-directory limitations.
+Native WanGP catalogs may expose safe subfolder-relative LoRA identifiers. The local fallback exposes only immediate `.safetensors` and `.sft` filenames. Generation passes validated selections using WanGP's documented `activated_loras` and space-separated `loras_multipliers` settings. See [docs/wan-gp-lora-mcp.md](docs/wan-gp-lora-mcp.md) for behavior and custom-directory limitations.
 
 LoRA, profile, metadata, and private override changes invalidate the discovery cache automatically. **Refresh models** also forces immediate rediscovery.
 
@@ -132,9 +132,11 @@ Job request snapshots and upload handles are stored in memory, so setting reuse 
 
 ### Video workflow controls
 
-- **Duration** uses the selected model's discovered minimum, maximum, increment, and default, falling back to 1–20 seconds with a 15-second default. LTX video length is controlled through aligned `video_length` frames rather than WanGP's unrelated audio-only `duration_seconds` field.
+- **Model discovery** lists every locally available MCP video model by its exact `model_type`; it is not restricted by an application video allow-list. `DEFAULT_VIDEO_MODEL` may name an exact model type. The legacy `ltx-2` value preserves the saved preferred LTX checkpoint when available.
+- **Text or image input** follows model capabilities. Text-to-video models can submit without an image. Start and end pickers are enabled only when the selected model advertises those frame inputs, and a start image is required only when text-to-video is unavailable.
+- **Duration** uses the selected model's discovered minimum, maximum, increment, and default, falling back to 1–20 seconds with a 15-second default. Frame-based models receive an aligned frame count; seconds-based models receive `duration_seconds`.
 - **Frames per second** uses the discovered model range under **Advanced** and maps to WanGP's available `force_fps`, `fps`, or `frame_rate` setting.
-- **Start image / source strength** maps to WanGP `input_video_strength` and accepts values from 0 to 1. The installed LTX model currently defaults to 0.85.
+- **Start image / source strength** appears only when the selected model publishes a compatible strength setting, such as `input_video_strength`, `source_strength`, or `denoising_strength`.
 - **Steps** and **Guidance (CFG)** use discovered model bounds when published. Steps map to `num_inference_steps`; guidance maps to `guidance_scale` or `cfg_scale`.
 
 ### Local application settings

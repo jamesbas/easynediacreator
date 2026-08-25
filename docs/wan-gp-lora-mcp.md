@@ -1,6 +1,6 @@
 # WanGP LoRA discovery
 
-WanGP `main` as inspected on July 12, 2026 documents the generation settings `activated_loras` and `loras_multipliers`, but its public MCP server does not expose model-aligned LoRA discovery. Easy Media Generator does not patch WanGP to add that tool.
+WanGP's MCP server exposes model-aligned LoRA discovery through `wangp_list_loras`. Easy Media Generator also remains compatible with older WanGP servers that do not provide a native catalog and does not patch WanGP to add tools.
 
 ## Discovery order
 
@@ -25,7 +25,7 @@ The fallback maps the model metadata returned by `wangp_get_model_schema` to Wan
 | Other Flux.2 | `flux2` |
 | LTX-2 | `ltx2` |
 
-Only immediate `.safetensors` and `.sft` files are returned, and only their filenames leave the server-side discovery layer. The selected names are validated against that catalog before generation.
+The native tool may return recursive, subfolder-relative identifiers; the app accepts safe relative paths and rejects absolute or traversal paths. The filesystem fallback returns only immediate `.safetensors` and `.sft` files, and only their filenames leave the server-side discovery layer. Selected identifiers are validated against that catalog before generation.
 
 ## Custom WanGP directories
 

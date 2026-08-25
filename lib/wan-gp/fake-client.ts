@@ -15,6 +15,7 @@ const fakeModels: WanGpModelSummary[] = [
   { modelType: "krea2_raw_edit_fixture", name: "Krea 2 RAW Identity Edit v1.2", family: "krea2", output: "image", inputs: ["text", "image"] },
   { modelType: "krea2_turbo_edit_fixture", name: "Krea 2 Turbo Identity Edit v1.2", family: "krea2", output: "image", inputs: ["text", "image"] },
   { modelType: "ltx2_fixture", name: "LTX-2 Distilled", family: "ltx2", output: "video", inputs: ["text", "image"], finetune: false },
+  { modelType: "minimax_video_fixture", name: "MiniMax Video", family: "minimax", output: "video", inputs: ["text"], finetune: false },
 ];
 const execFileAsync = promisify(execFile);
 
@@ -23,11 +24,15 @@ export class FakeWanGpClient implements WanGpClient {
   private readonly submissions: { modelType: string; settings: Record<string, unknown> }[] = [];
   async ping() { return { connected: true, version: "fake-1.0" }; }
   async listModels(output?: "image" | "video") { return fakeModels.filter((model) => !output || model.output === output); }
-  async getModelMetadata(modelType: string) { const model = this.requireModel(modelType); return { ...model, capabilities: model.output === "video" ? ["start-frame", "end-frame"] : ["text-to-image"] }; }
+  async getModelMetadata(modelType: string) {
+    const model = this.requireModel(modelType);
+    const capabilities = model.output !== "video" ? ["text-to-image"] : model.family === "ltx2" ? ["text-to-video", "image-to-video", "start-frame", "end-frame"] : ["text-to-video"];
+    return { ...model, capabilities };
+  }
   async getModelAvailability(modelType: string) { this.requireModel(modelType); return { status: "available" as const }; }
   async getDefaultSettings(modelType: string) {
     const model = this.requireModel(modelType);
-    if (model.output === "video") return { resolution: "1280x720", duration_seconds: 15, force_fps: 24, input_video_strength: 0.85, num_inference_steps: 8, guidance_scale: 3, sample_solver: "distilled_8_steps", scheduler_type: "normal" };
+    if (model.output === "video") return { prompt: "", ...(model.family === "ltx2" ? { negative_prompt: "", input_video_strength: 0.85 } : {}), resolution: "1280x720", duration_seconds: 15, force_fps: 24, num_inference_steps: 8, guidance_scale: 3, sample_solver: "distilled_8_steps", scheduler_type: "normal" };
     // Krea 2 Turbo is step-distilled and refuses guidance, mirroring WanGP's own defaults.
     const distilled = model.family === "krea2" && /turbo/i.test(model.name);
     const guidance = model.family === "krea2" ? (distilled ? 0 : 3.5) : model.family === "qwen" ? 4 : 5;
@@ -53,7 +58,7 @@ export class FakeWanGpClient implements WanGpClient {
   }
   async listLoras(modelType: string) {
     const model = this.requireModel(modelType);
-    const loras = model.family === "ltx2" ? ["cinematic-motion.safetensors", "handheld-camera.sft"] : model.family === "flux" ? ["graphic-novel.safetensors", "soft-light.safetensors"] : model.family === "krea2" ? ["krea2-film-grain.safetensors", "krea2-portrait.safetensors"] : ["editorial-style.safetensors", "product-photo.sft", "Qwen-Lightning-4steps.safetensors", "bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors", "Qwen-Image-Edit-Unblur-Upscale_20.safetensors"];
+    const loras = model.family === "ltx2" ? ["cinematic-motion.safetensors", "handheld-camera.sft"] : model.family === "minimax" ? [] : model.family === "flux" ? ["graphic-novel.safetensors", "soft-light.safetensors"] : model.family === "krea2" ? ["krea2-film-grain.safetensors", "krea2-portrait.safetensors"] : ["editorial-style.safetensors", "product-photo.sft", "Qwen-Lightning-4steps.safetensors", "bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors", "Qwen-Image-Edit-Unblur-Upscale_20.safetensors"];
     const accelerationPresets = modelType === "qwen_image_fixture" ? [{ id: "fixture-qwen-lightning", label: "Lightning Qwen - 4 Steps", modelTypes: [modelType], workflowTypes: ["image-create" as const], loras: [{ filename: "Qwen-Lightning-4steps.safetensors", multiplier: 1, required: true, role: "single" as const }], settings: { numInferenceSteps: 4, guidanceScale: 1, sampleSolver: "lightning" }, source: "mcp" as const, confidence: "authoritative" as const, evidence: [{ source: "mcp" as const, detail: "Fixture accelerator preset" }] }] : [];
     return { supported: true, loras, accelerationPresets };
   }

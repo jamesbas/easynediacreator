@@ -14,7 +14,7 @@ export const LTX2_1080P_CHOICES: GenerationChoice[] = [
 ];
 
 export function getVideoFallbackResolutions(modelKey: string, defaultResolution: string): GenerationChoice[] {
-  if (modelKey !== "ltx-2") return [];
+  if (modelKey !== "ltx-2" && !modelKey.toLowerCase().startsWith("ltx2")) return [];
   const choices = LTX2_1080P_CHOICES.map((choice) => ({ ...choice }));
   if (choices.some((choice) => choice.value === defaultResolution)) return choices;
   return [{ label: `${defaultResolution} (current default)`, value: defaultResolution }, ...choices];

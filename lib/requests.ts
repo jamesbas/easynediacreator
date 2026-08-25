@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { CHARACTER_GENDERS } from "@/lib/character-prompt";
+import { isSafeRelativeLoraIdentifier } from "@/lib/wan-gp/schemas";
 
 export const DEFAULT_NEGATIVE_PROMPT = "blurry, low resolution, pixelated, compression artifacts, deformed anatomy, distorted face, malformed hands, extra limbs, extra fingers, missing fingers, fused fingers, warped proportions, duplicate subjects, text, watermark, logo";
 
 export const loraSelectionSchema = z.object({
-  name: z.string().trim().min(1).max(255).refine((value) => !value.includes("/") && !value.includes("\\") && value !== "." && value !== "..", "LoRA must be an available filename."),
+  name: z.string().trim().min(1).max(255).refine(isSafeRelativeLoraIdentifier, "LoRA must be an available relative identifier."),
   strength: z.number().finite().min(-10).max(10).default(1),
 });
 
@@ -87,7 +88,7 @@ export const videoCreateRequestSchema = baseGenerationSchema.extend({
   startUploadId: z.string().uuid().optional(), startAssetId: z.string().uuid().optional(),
   endUploadId: z.string().uuid().optional(), endAssetId: z.string().uuid().optional(),
   durationSeconds: z.number().int().min(1).max(3600).default(15), fps: z.number().int().min(1).max(240).optional(), sourceStrength: z.number().finite().min(0).max(1).default(0.85), steps: z.number().int().min(1).max(1000).optional(), guidanceScale: z.number().finite().min(0).max(100).optional(),
-}).refine((value) => Boolean(value.startUploadId) !== Boolean(value.startAssetId), { message: "Choose exactly one start image." })
+}).refine((value) => !(value.startUploadId && value.startAssetId), { message: "Choose only one start image." })
   .refine((value) => !(value.endUploadId && value.endAssetId), { message: "Choose only one end image." });
 
 export type VideoCreateRequest = z.infer<typeof videoCreateRequestSchema>;

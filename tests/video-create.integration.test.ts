@@ -25,6 +25,29 @@ describe("video creation", () => {
     expect(client.getLastSubmissionForTests()?.settings).toMatchObject({ video_length: 361, input_video_strength: 0.6, num_inference_steps: 8, negative_prompt: "blurry, jittery frames", activated_loras: ["cinematic-motion.safetensors"], loras_multipliers: "0.8" });
   }, 10000);
 
+  it("submits text-to-video with a non-LTX model and no start image", async () => {
+    const client = new FakeWanGpClient();
+    setWanGpClientForTests(client);
+
+    await createVideo({ prompt: "Clouds rolling over a mountain", negativePrompt: "blurry", modelKey: "minimax_video_fixture", durationSeconds: 7, sourceStrength: 0.85, steps: 8, loras: [], advanced: {} });
+    const deadline = Date.now() + 1000;
+    while (!client.getLastSubmissionForTests() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(client.getLastSubmissionForTests()).toMatchObject({
+      modelType: "minimax_video_fixture",
+      settings: { prompt: "Clouds rolling over a mountain", duration_seconds: 7, image_prompt_type: "" },
+    });
+    expect(client.getLastSubmissionForTests()?.settings).not.toHaveProperty("image_start");
+  });
+
+  it("rejects images that the selected video model does not support", async () => {
+    const buffer = await sharp({ create: { width: 64, height: 36, channels: 3, background: "#dda928" } }).png().toBuffer();
+    const upload = await storeImageUpload(buffer, await validateImageBuffer(buffer));
+
+    await expect(createVideo({ startUploadId: upload.id, prompt: "Unsupported image", negativePrompt: "blurry", modelKey: "minimax_video_fixture", durationSeconds: 7, sourceStrength: 0.85, steps: 8, loras: [], advanced: {} }))
+      .rejects.toThrow(/Start images are not supported/);
+  });
+
   it("rejects video values outside the selected model constraints", async () => {
     const buffer = await sharp({ create: { width: 64, height: 36, channels: 3, background: "#dda928" } }).png().toBuffer();
     const upload = await storeImageUpload(buffer, await validateImageBuffer(buffer));

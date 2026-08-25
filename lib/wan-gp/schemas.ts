@@ -58,8 +58,16 @@ export function parseWanGpJobSnapshot(value: unknown) {
 export function parseLoraCatalog(value: unknown) {
   const source = Array.isArray(value) ? value : value && typeof value === "object" && "loras" in value ? (value as { loras: unknown }).loras : [];
   const items = z.array(z.union([z.string(), z.object({ name: z.string().optional(), filename: z.string().optional() })])).parse(source);
-  const loras = items.map((item) => typeof item === "string" ? item : item.name ?? item.filename ?? "").map((item) => item.trim()).filter((item) => item && !item.includes("/") && !item.includes("\\"));
+  const loras = items
+    .map((item) => typeof item === "string" ? item : item.name ?? item.filename ?? "")
+    .map((item) => item.trim())
+    .filter(isSafeRelativeLoraIdentifier);
   return [...new Set(loras)].sort((left, right) => left.localeCompare(right));
+}
+
+export function isSafeRelativeLoraIdentifier(identifier: string) {
+  if (!identifier || identifier.includes("\0") || /^[\\/]/.test(identifier) || /^[a-z]:[\\/]/i.test(identifier)) return false;
+  return identifier.split(/[\\/]/).every((part) => part !== "" && part !== "." && part !== "..");
 }
 
 export function parseWanGpTextContent(content: { type: string; text?: string }[]) {
@@ -79,6 +87,32 @@ export function parseWanGpStructuredContent(value: unknown) {
     if (Object.keys(source).length === 1 && "result" in source) return source.result;
   }
   return value;
+}
+
+const projectedModelDefinitionKeys = [
+  "duration_slider", "fps", "fps_slider", "frames_maximum", "frames_minimum", "frames_steps",
+  "guidance_max_phases", "guidance_scale_slider", "guidance_slider", "inference_steps_slider",
+  "resolutions", "resolutions_categories", "sample_solvers", "scheduler_names", "scheduler_types",
+  "schedulers", "steps_slider",
+];
+
+export function mergeWanGpModelDefinition(schema: Record<string, unknown>, definition: Record<string, unknown>) {
+  const schemaMetadata = recordOrEmpty(schema.metadata);
+  const definitionMetadata = recordOrEmpty(definition.metadata);
+  const existingModelDefinition = recordOrEmpty(schema.model_def);
+  const projectedModelDefinition = Object.fromEntries(projectedModelDefinitionKeys
+    .filter((key) => definition[key] !== undefined)
+    .map((key) => [key, definition[key]]));
+  const settingValues = definitionMetadata.setting_values ?? schemaMetadata.setting_values;
+  return {
+    ...schema,
+    metadata: { ...schemaMetadata, ...(settingValues !== undefined ? { setting_values: settingValues } : {}) },
+    model_def: { ...projectedModelDefinition, ...existingModelDefinition },
+  };
+}
+
+function recordOrEmpty(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 export function record(value: unknown) {

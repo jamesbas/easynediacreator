@@ -1,0 +1,27 @@
+import type { VideoCreateRequest } from "@/lib/requests";
+import { applyLoraSettings, applySamplingSettings, applyVideoDuration, setDiscoveredSetting } from "../settings-builder";
+
+export function buildVideoSettings(request: VideoCreateRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string, startPath?: string, endPath?: string) {
+  if (Object.keys(request.advanced).length) throw new Error("The selected model does not allow these advanced settings.");
+  const settings = { ...defaults };
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["prompt", "text_prompt"], request.prompt, true);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["negative_prompt"], request.negativePrompt);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["num_inference_steps", "steps"], request.steps, request.steps !== undefined);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["guidance_scale", "cfg_scale"], request.guidanceScale, request.guidanceScale !== undefined);
+  applySamplingSettings(settings, schema, defaults, modelType, request);
+
+  const imagePromptType = `${startPath ? "S" : ""}${endPath ? "E" : ""}`;
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["image_prompt_type"], imagePromptType, Boolean(imagePromptType));
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["image_start", "start_image", "start_frame", "input_image", "image"], startPath, Boolean(startPath));
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["image_end", "end_image", "end_frame"], endPath, Boolean(endPath));
+  if (startPath) setDiscoveredSetting(settings, schema, defaults, modelType, ["input_video_strength", "source_strength", "denoising_strength"], request.sourceStrength);
+
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["resolution", "size"], request.resolution);
+  const defaultFps = Number(defaults.force_fps ?? defaults.fps ?? defaults.frame_rate);
+  const fps = request.fps ?? (Number.isFinite(defaultFps) && defaultFps > 0 ? defaultFps : 24);
+  applyVideoDuration(settings, schema, defaults, modelType, request.durationSeconds, fps);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["force_fps", "fps", "frames_per_second"], request.fps);
+  setDiscoveredSetting(settings, schema, defaults, modelType, ["seed"], request.seed);
+  applyLoraSettings(settings, schema, defaults, modelType, request.loras);
+  return settings;
+}

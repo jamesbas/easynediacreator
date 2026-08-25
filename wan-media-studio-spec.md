@@ -62,7 +62,8 @@ The UI must initially expose only the following logical model choices.
 
 ### 3.2 Video generation
 
-- **LTX-2**, restricted to the installed LTX-2 model or finetune selected in configuration.
+- Every video model reported locally available by the WanGP MCP server.
+- Text, start-image, and end-image inputs are enabled or required from each model's discovered capabilities.
 
 WanGP currently exposes model-discovery metadata, schemas, defaults, capabilities, and local availability through its MCP server. The application must use these discovery functions during startup and must map human-friendly logical names to the exact WanGP `model_type` identifiers found on the local server.
 
@@ -82,9 +83,8 @@ export const enabledModels = {
     { key: "qwen-image-edit", modelType: "AUTO_DISCOVER", family: "qwen" },
     { key: "flux-klein-9b", modelType: "AUTO_DISCOVER", family: "flux" },
   ],
-  videoCreate: [
-    { key: "ltx-2", modelType: "ltx2_22B_distilled", family: "ltx2" },
-  ],
+  // Video models are discovered dynamically from locally available MCP records.
+  videoCreate: "ALL_LOCALLY_AVAILABLE",
 } as const;
 ```
 
@@ -127,7 +127,7 @@ WanGP MCP Server
 WanGP Python Runtime + GPU
   - Qwen Image / Edit
   - Flux.2 Klein 9B
-  - LTX-2
+  - Locally available video models
             |
             v
 WanGP Output Folders
@@ -289,10 +289,10 @@ Output actions:
 
 Required fields:
 
-- Start image — required for the first release.
-- End image — optional; show only when the selected LTX-2 schema reports end-frame support.
+- Start image — optional for text-to-video models; required only when the selected model cannot generate video from text alone.
+- End image — optional; show only when the selected model reports end-frame support.
 - Prompt — multiline text area.
-- LTX-2 model choice — normally one configured default; allow future additional LTX-2 variants.
+- Video model choice — every locally available MCP video model, keyed by exact `model_type`.
 - Duration — use supported values discovered from the model schema or configured presets.
 - Resolution/aspect ratio — supported values only.
 - Frames per second — default from WanGP model settings; advanced field.
@@ -384,7 +384,7 @@ Provide read-only operational status plus a few safe preferences:
 - Model availability: available, partial, or missing.
 - Default image model.
 - Default image-edit model.
-- Default LTX-2 model.
+- Default video model.
 - Default resolution.
 - Default duration.
 - Output/gallery root.
@@ -878,7 +878,6 @@ WANGP_DISCOVERY_CACHE_MINUTES=30
 
 ENABLED_IMAGE_CREATE_MODELS=qwen-image,flux-klein-9b
 ENABLED_IMAGE_EDIT_MODELS=qwen-image-edit,flux-klein-9b
-ENABLED_VIDEO_MODELS=ltx-2
 DEFAULT_IMAGE_CREATE_MODEL=qwen-image
 DEFAULT_IMAGE_EDIT_MODEL=qwen-image-edit
 DEFAULT_VIDEO_MODEL=ltx-2
@@ -909,7 +908,7 @@ Examples:
 - Model is only partially available.
 - Unsupported resolution.
 - Source image could not be decoded.
-- End frame is not supported by this LTX-2 configuration.
+- End frame is not supported by the selected video model.
 - Job queue is full.
 - WanGP generation failed.
 - GPU memory was insufficient; try a lower resolution or shorter duration.
@@ -963,7 +962,7 @@ Prompts may be stored in the local database because prompt history is a product 
 - Qwen create settings builder.
 - Qwen edit settings builder.
 - Flux Klein settings builder.
-- LTX-2 start/end-frame settings builder.
+- Generic schema-driven video settings builder, including optional start/end frames.
 - Zod request validation.
 - Canonical-path enforcement.
 - Job state transitions.
@@ -1033,8 +1032,8 @@ No automated test should require the GPU or a live WanGP server.
 
 ### Phase 5 — Video creation
 
-- Start-image and optional end-image workflow.
-- LTX-2 adapter.
+- Text-to-video and capability-driven optional start/end-image workflow.
+- Generic video adapter with model-specific fields discovered from MCP.
 - Duration and resolution schema controls.
 - Video player with HTTP range support.
 
@@ -1068,10 +1067,10 @@ The initial release is complete when:
 2. The app cannot be reached through the public internet.
 3. WanGP MCP is bound privately and cannot be called directly from the browser.
 4. The app discovers local WanGP model IDs rather than assuming them.
-5. Only configured Qwen, Flux.2 Klein 9B, and LTX-2 choices appear.
+5. Only configured image choices and locally available MCP video models appear.
 6. The user can create an image from a prompt.
 7. The user can edit an uploaded or previously generated image with a prompt.
-8. The user can generate an LTX-2 video from a start image.
+8. The user can generate video from text and can supply a start image when the selected model supports it.
 9. The user can optionally supply an end image when the discovered model supports it.
 10. The user can see progress and cancel an active generation.
 11. Completed outputs appear in a local gallery.
@@ -1123,15 +1122,15 @@ Architecture requirements:
 - Never connect to WanGP MCP from browser code.
 - Keep business logic in lib/services and WanGP-specific mapping in lib/wan-gp adapters.
 - Implement a fake MCP client first so development and automated tests work without WanGP.
-- Use configuration-driven model allow-lists and discover exact WanGP model IDs, schemas, defaults, capabilities, and availability from MCP.
-- Initially expose only Qwen Image, Qwen Image Edit, Flux.2 Klein 9B, and one configured LTX-2 model.
+- Use configuration-driven image model allow-lists and discover exact WanGP model IDs, schemas, defaults, capabilities, and availability from MCP.
+- Expose configured image models and every locally available MCP video model.
 - Bind the production web app to localhost and document Tailscale Serve deployment.
 - Do not introduce FastAPI or another Python web backend.
 
 Required workflows:
 1. Create image from a user-supplied prompt.
 2. Edit an uploaded or gallery image with a user-supplied prompt.
-3. Generate an LTX-2 video from a required start image and optional end image.
+3. Generate video from text or supported start/end images with a locally available MCP video model.
 
 Required surfaces:
 - Create Image
@@ -1167,7 +1166,7 @@ Do not hard-code unverified WanGP setting names in React components. Retrieve th
 
 WanGP currently provides a reusable MCP server over stdio or Streamable HTTP. Its MCP surface includes model discovery, schema/default retrieval, generation submission, job polling, and cancellation. It keeps one warm WanGP session, which is appropriate for repeated requests from this application.
 
-LTX-2 model metadata can advertise text, image, video, and audio inputs as well as start-frame, end-frame, and reference-image support. The application must inspect the installed model's actual metadata before rendering optional fields.
+Video model metadata can advertise text, image, video, and audio inputs as well as start-frame, end-frame, and reference-image support. The application must inspect each installed model's actual metadata before rendering optional fields.
 
 WanGP saves generated outputs to its normal output locations and returns generated file paths in job results. This application should store those returned paths as asset metadata while serving files only through controlled app routes.
 

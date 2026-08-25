@@ -46,9 +46,10 @@ describe("generation request validation", () => {
     expect(() => imageEditRequestSchema.parse({ ...base, loras: [{ name: "other.safetensors", strength: 1 }] })).toThrow(/manages its required LoRAs/);
   });
 
-  it("rejects duplicate LoRAs and path-like LoRA names", () => {
+  it("rejects duplicate and unsafe LoRA identifiers while accepting safe subfolders", () => {
     expect(() => imageCreateRequestSchema.parse({ prompt: "test", modelKey: "qwen-image", count: 1, loras: [{ name: "style.safetensors", strength: 1 }, { name: "STYLE.SAFETENSORS", strength: 0.5 }] })).toThrow(/selected more than once/);
-    expect(() => imageCreateRequestSchema.parse({ prompt: "test", modelKey: "qwen-image", count: 1, loras: [{ name: "..\\unsafe.safetensors", strength: 1 }] })).toThrow(/available filename/);
+    expect(() => imageCreateRequestSchema.parse({ prompt: "test", modelKey: "qwen-image", count: 1, loras: [{ name: "..\\unsafe.safetensors", strength: 1 }] })).toThrow(/available relative identifier/);
+    expect(imageCreateRequestSchema.parse({ prompt: "test", modelKey: "qwen-image", count: 1, loras: [{ name: "styles/editorial.safetensors", strength: 1 }] }).loras[0].name).toBe("styles/editorial.safetensors");
   });
 
   it("accepts model-specific video values within broad transport limits", () => {
@@ -58,5 +59,6 @@ describe("generation request validation", () => {
     expect(videoCreateRequestSchema.parse({ ...base, durationSeconds: 21 }).durationSeconds).toBe(21);
     expect(() => videoCreateRequestSchema.parse({ ...base, durationSeconds: 3601 })).toThrow();
     expect(() => videoCreateRequestSchema.parse({ ...base, sourceStrength: 1.1 })).toThrow();
+    expect(videoCreateRequestSchema.parse({ prompt: "text only", modelKey: "minimax_video_fixture" })).toMatchObject({ durationSeconds: 15 });
   });
 });

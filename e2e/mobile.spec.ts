@@ -41,7 +41,7 @@ test("keeps the face-swap edit workflow usable on phone viewports", async ({ pag
   await page.screenshot({ path: "test-results/mobile-face-swap.png", fullPage: true });
 });
 
-test("keeps LTX video controls usable on phone viewports", async ({ page }) => {
+test("keeps video controls usable on phone viewports", async ({ page }) => {
   await page.goto("/create-video");
   await expect(page.getByLabel("Duration")).toHaveValue("15");
   await expect(page.getByRole("slider", { name: "Start image / source strength" })).toHaveValue("0.85");

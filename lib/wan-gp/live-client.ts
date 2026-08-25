@@ -2,12 +2,14 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { z } from "zod";
 import type { WanGpClient } from "./client";
-import { availabilitySchema, modelListSchema, parseLoraCatalogResponse, parseWanGpJobSnapshot, parseWanGpStructuredContent, parseWanGpTextContent, record } from "./schemas";
+import { availabilitySchema, mergeWanGpModelDefinition, modelListSchema, parseLoraCatalogResponse, parseWanGpJobSnapshot, parseWanGpStructuredContent, parseWanGpTextContent, record } from "./schemas";
 import { listLocalLoras } from "./local-lora-catalog";
+
+const MODEL_PAGE_SIZE = 10;
 
 const allowedTools = new Set([
   "wangp_list_models", "wangp_get_model_metadata", "wangp_get_model_availability", "wangp_get_default_settings",
-  "wangp_get_model_schema", "wangp_generate", "wangp_get_job", "wangp_cancel_job",
+  "wangp_get_model_schema", "wangp_get_model", "wangp_model", "wangp_generate", "wangp_get_job", "wangp_cancel_job",
   "wangp_list_lora_presets", "wangp_list_loras", "wangp_get_loras",
 ]);
 
@@ -21,6 +23,7 @@ export class LiveWanGpClient implements WanGpClient {
   private client?: Client;
   private connecting?: Promise<Client>;
   private toolNames?: Set<string>;
+  private toolInputProperties?: Map<string, Set<string>>;
   constructor(private readonly endpoint: string, private readonly loraRoot?: string) {}
 
   async ping() {
@@ -29,13 +32,25 @@ export class LiveWanGpClient implements WanGpClient {
     return { connected: true, version: server?.version };
   }
   async listModels(output?: "image" | "video") {
-    const models = modelListSchema.parse(await this.call("wangp_list_models", { ...(output ? { main_output: output } : {}), include_availability: true }));
+    const baseArguments = { ...(output ? { main_output: output } : {}), include_availability: true };
+    const paginated = await this.toolSupportsArguments("wangp_list_models", ["limit", "offset"]);
+    const models = paginated ? await this.listModelPages(baseArguments) : modelListSchema.parse(await this.call("wangp_list_models", baseArguments));
     return output ? models.map((model) => ({ ...model, output })) : models;
   }
   async getModelMetadata(modelType: string) { return record(await this.call("wangp_get_model_metadata", { model_type: modelType })); }
   async getModelAvailability(modelType: string) { return availabilitySchema.parse(await this.call("wangp_get_model_availability", { model_type: modelType })); }
   async getDefaultSettings(modelType: string) { return record(await this.call("wangp_get_default_settings", { model_type: modelType })); }
-  async getModelSchema(modelType: string) { return record(await this.call("wangp_get_model_schema", { model_type: modelType })); }
+  async getModelSchema(modelType: string) {
+    const schema = record(await this.call("wangp_get_model_schema", { model_type: modelType }));
+    const definitionTool = await this.findTool(["wangp_get_model", "wangp_model"]);
+    if (!definitionTool) return schema;
+    const args = definitionTool === "wangp_model" ? { model_type: modelType, view: "definition" } : { model_type: modelType };
+    try {
+      return mergeWanGpModelDefinition(schema, record(await this.call(definitionTool, args)));
+    } catch {
+      return schema;
+    }
+  }
   async listLoras(modelType: string) {
     const candidates = ["wangp_list_lora_presets", "wangp_list_loras", "wangp_get_loras"];
     const toolName = candidates.find((candidate) => this.toolNames?.has(candidate)) ?? await this.findTool(candidates);
@@ -82,8 +97,32 @@ export class LiveWanGpClient implements WanGpClient {
     return parseWanGpTextContent(result.content);
   }
 
+  private async listModelPages(baseArguments: Record<string, unknown>) {
+    const models = new Map<string, z.infer<typeof modelListSchema>[number]>();
+    for (let offset = 0; ; offset += MODEL_PAGE_SIZE) {
+      const page = modelListSchema.parse(await this.call("wangp_list_models", { ...baseArguments, limit: MODEL_PAGE_SIZE, offset }));
+      const previousSize = models.size;
+      for (const model of page) models.set(model.modelType, model);
+      if (page.length < MODEL_PAGE_SIZE || models.size === previousSize) break;
+    }
+    return [...models.values()];
+  }
+
+  private async loadTools() {
+    if (this.toolNames && this.toolInputProperties) return;
+    const tools = (await (await this.connect()).listTools()).tools;
+    this.toolNames = new Set(tools.map((tool) => tool.name));
+    this.toolInputProperties = new Map(tools.map((tool) => [tool.name, new Set(Object.keys(tool.inputSchema.properties ?? {}))]));
+  }
+
+  private async toolSupportsArguments(toolName: string, argumentsToCheck: string[]) {
+    await this.loadTools();
+    const properties = this.toolInputProperties?.get(toolName);
+    return properties ? argumentsToCheck.every((argument) => properties.has(argument)) : false;
+  }
+
   private async findTool(candidates: string[]) {
-    if (!this.toolNames) this.toolNames = new Set((await (await this.connect()).listTools()).tools.map((tool) => tool.name));
+    await this.loadTools();
     return candidates.find((candidate) => this.toolNames?.has(candidate));
   }
 }
