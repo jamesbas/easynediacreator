@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FACE_SWAP_LORAS } from "@/lib/face-swap-preset";
 import { discoverModels } from "@/lib/wan-gp/discovery";
 import { buildFluxKleinImageSettings } from "@/lib/wan-gp/adapters/flux-klein-image";
 import { buildKrea2ImageEditSettings } from "@/lib/wan-gp/adapters/krea2-image-edit";
@@ -53,8 +54,7 @@ describe.runIf(runLive)("live WanGP MCP", () => {
     expect(settings).not.toHaveProperty("guidance_scale");
   });
 
-  it("builds current Krea Turbo Edit settings without CFG", async () => {
-    const model = (await discoverModels(client, DEFAULT_MODEL_SELECTIONS)).find((candidate) => candidate.workflowType === "image-edit" && candidate.key === "krea-2-edit");
+  it("builds current Krea Turbo Edit settings without CFG", async () => {    const model = (await discoverModels(client, DEFAULT_MODEL_SELECTIONS)).find((candidate) => candidate.workflowType === "image-edit" && candidate.key === "krea-2-edit");
     expect(model?.modelType).toBe("krea2_turbo_edit");
 
     const settings = buildKrea2ImageEditSettings(
@@ -90,5 +90,16 @@ describe.runIf(runLive)("live WanGP MCP", () => {
     );
     expect(settings).toMatchObject({ image_refs: [sourcePath, "C:\\input\\reference.png"], video_prompt_type: "KI", num_inference_steps: 20 });
     expect(settings).not.toHaveProperty("image_guide");
+  });
+
+  it("builds a Qwen face swap against the current schema", async () => {
+    const model = (await discoverModels(client, DEFAULT_MODEL_SELECTIONS)).find((candidate) => candidate.workflowType === "image-edit" && candidate.key === "qwen-image-edit");
+    expect(model?.modelType).toBeTruthy();
+    const settings = buildQwenImageEditSettings(
+      { sourceAssetId: crypto.randomUUID(), referenceUploadIds: [crypto.randomUUID()], referenceAssetIds: [], faceSwap: true, sharpenUnblur: false, prompt: "replaced server-side", negativePrompt: "blurry", modelKey: "qwen-image-edit", steps: 20, loras: [], advanced: {} },
+      model!.defaults, model!.schema, model!.modelType!, "C:\\input\\source.png", ["C:\\input\\face.png"],
+    );
+    expect(settings).toMatchObject({ sample_solver: "lightning", activated_loras: FACE_SWAP_LORAS.map((lora) => lora.name) });
+    expect(settings).not.toHaveProperty("mask_expand");
   });
 });

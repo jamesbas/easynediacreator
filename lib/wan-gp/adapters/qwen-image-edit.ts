@@ -48,8 +48,9 @@ export function buildQwenImageEditSettings(request: ImageEditRequest, defaults: 
     setDiscoveredSetting(settings, schema, defaults, modelType, ["guidance_scale"], 1, true);
     setDiscoveredSetting(settings, schema, defaults, modelType, ["guidance_phases"], 1, true);
     setDiscoveredSetting(settings, schema, defaults, modelType, ["model_mode"], 1, true);
-    setDiscoveredSetting(settings, schema, defaults, modelType, ["masking_strength"], 1, true);
-    setDiscoveredSetting(settings, schema, defaults, modelType, ["mask_expand"], 0, true);
+    // Mask tuning only exists on checkpoints that expose an inpainting mask; the swap sends none.
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["masking_strength"], 1);
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["mask_expand"], 0);
     setDiscoveredSetting(settings, schema, defaults, modelType, ["activated_loras"], FACE_SWAP_LORAS.map((lora) => lora.name), true);
     setDiscoveredSetting(settings, schema, defaults, modelType, ["loras_multipliers"], FACE_SWAP_LORAS.map((lora) => `${lora.strength}`).join(" "), true);
   } else {

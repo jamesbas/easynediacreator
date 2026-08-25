@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FACE_SWAP_LORAS } from "@/lib/face-swap-preset";
 import { buildQwenImageEditSettings } from "@/lib/wan-gp/adapters/qwen-image-edit";
 
 const request = {
@@ -53,5 +54,20 @@ describe("Qwen image-edit settings", () => {
 
     expect(settings).toMatchObject({ image_refs: [], image_prompt_type: "", video_prompt_type: "" });
     expect(settings).not.toHaveProperty("image_mode");
+  });
+
+  it("builds a face swap when the schema exposes no mask tuning settings", () => {
+    const settings = buildQwenImageEditSettings(
+      { ...request, faceSwap: true },
+      { prompt: "", negative_prompt: "", image_prompt_type: "", video_prompt_type: "", model_mode: 0, num_inference_steps: 20, guidance_scale: 4, guidance_phases: 1, sample_solver: "default", activated_loras: [], loras_multipliers: "" },
+      { metadata: { media_inputs: { image: { reference: true } }, capabilities: { lora: true } } },
+      "qwen_image_edit_plus2_20B",
+      "C:\\input\\source.png",
+      ["C:\\input\\reference.png"],
+    );
+
+    expect(settings).toMatchObject({ sample_solver: "lightning", guidance_scale: 1, model_mode: 1, activated_loras: FACE_SWAP_LORAS.map((lora) => lora.name) });
+    expect(settings).not.toHaveProperty("mask_expand");
+    expect(settings).not.toHaveProperty("masking_strength");
   });
 });

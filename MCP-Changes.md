@@ -30,6 +30,7 @@ No generation, cancellation, upload, post-processing, file, or other mutating op
 | Image mode | Shared image creation required `image_mode`. | Current Flux Klein and current Qwen contracts can omit `image_mode` while exposing prompt/reference behavior through other fields and capabilities. | Requiring `image_mode` prevents valid text-to-image generation before submission. |
 | Image guidance | Image workflows always displayed and submitted a fallback CFG value. | Current distilled Flux Klein omits CFG; Flux Klein Base publishes it. Krea 2 Turbo Edit reports `guidance_max_phases: 0` and omits `guidance_scale`. | A fallback CFG control can turn an intentionally disabled setting into a schema error. |
 | Multiline prompts | A user-entered prompt could contain paragraphs and line feeds. | With `multi_prompts_gen_type: "PG"`, Wan2GP parses prompt lines as separate generation requests, while this app submits one generation task. | A multiline prompt fails unless line breaks are joined or the mode is changed to `FG`. |
+| Mask tuning | The Qwen face-swap preset required `masking_strength` and `mask_expand`. | Current Qwen edit checkpoints omit `mask_expand`, and `qwen_image_edit_20B` also omits `masking_strength`. | Face swap fails before submission even though it sends no mask. |
 
 ## Model discovery
 
@@ -255,6 +256,15 @@ First paragraph. Second paragraph.
 
 The queue-level normalization also covers retries created before the request-schema normalization and direct internal service calls. Negative prompts are left unchanged because the observed Wan2GP task splitting applies to the primary prompt.
 
+## Face-swap mask settings
+
+The Qwen face-swap preset previously required `masking_strength` and `mask_expand`. The current contracts show:
+
+- `qwen_image_edit_plus2_20B` publishes `masking_strength` but not `mask_expand`;
+- `qwen_image_edit_20B` publishes neither.
+
+Both checkpoints still publish `sample_solver`, `guidance_scale`, `guidance_phases`, `model_mode`, and the LoRA settings the preset depends on. Because the preset supplies a reference face rather than an inpainting mask, these mask-tuning values are refinements rather than requirements. Easy Media Generator now sends them only when the selected checkpoint exposes them.
+
 ## LoRA discovery
 
 ### Native tool now available
@@ -370,14 +380,15 @@ Regression coverage was added for:
 - current Flux Klein creation without `image_mode` or CFG;
 - current Krea Turbo Edit without CFG serialization;
 - multiline prompts normalized to one outbound generation prompt;
+- face swap built against schemas without mask-tuning settings;
 - live Qwen, Flux, Krea, LTX, and non-LTX video settings against the current server.
 
 ## Validation results
 
 The completed changes were validated with:
 
-- read-only live Wan2GP MCP suite: 7 passed;
-- normal unit and integration suite: 119 passed, 7 skipped;
+- read-only live Wan2GP MCP suite: 8 passed;
+- normal unit and integration suite: 120 passed, 8 skipped;
 - Playwright desktop and mobile suite: 20 passed;
 - TypeScript typecheck: passed;
 - ESLint: passed;
