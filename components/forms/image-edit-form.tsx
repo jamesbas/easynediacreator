@@ -11,6 +11,7 @@ import { SHARPEN_UNBLUR_LORA, SHARPEN_UNBLUR_PROMPT } from "@/lib/sharpen-unblur
 import type { LoraAccelerationPreset, LoraCatalog } from "@/lib/types";
 import type { GenerationControls } from "@/lib/wan-gp/generation-controls";
 import { supportsTextToImage } from "@/lib/wan-gp/text-to-image";
+import { EnhancePromptButton } from "./enhance-prompt-button";
 import { InsertCharacterButton } from "./insert-character-button";
 import { LoraSelector, readLoraSelections } from "./lora-selector";
 
@@ -29,7 +30,7 @@ async function uploadImage(file: File) {
   return String(result.upload.id);
 }
 
-export function ImageEditForm({ models, assets, characters, defaultModel, initialAssetId, initialRequest }: { models: FormModel[]; assets: AssetOption[]; characters: CharacterSummary[]; defaultModel: string; initialAssetId?: string; initialRequest?: ImageEditRequest }) {
+export function ImageEditForm({ models, assets, characters, defaultModel, promptEnhancerEnabled, initialAssetId, initialRequest }: { models: FormModel[]; assets: AssetOption[]; characters: CharacterSummary[]; defaultModel: string; promptEnhancerEnabled: boolean; initialAssetId?: string; initialRequest?: ImageEditRequest }) {
   const router = useRouter();
   const previewUrls = useRef(new Set<string>());
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -391,7 +392,7 @@ export function ImageEditForm({ models, assets, characters, defaultModel, initia
       </section>
 
       <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="edit-prompt" className="block text-sm font-bold">Edit prompt</label><InsertCharacterButton characters={characters} prompt={prompt} textarea={promptRef} disabled={faceSwap} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></div>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="edit-prompt" className="block text-sm font-bold">Edit prompt</label><span className="flex flex-wrap items-center gap-2"><EnhancePromptButton enabled={promptEnhancerEnabled} prompt={prompt} disabled={batchPreset} context={{ workflowType: "image-edit", modelKey, hasSourceImage: !skipSource && sourceCount > 0, referenceCount }} onChange={setPrompt} onError={setError} /><InsertCharacterButton characters={characters} prompt={prompt} textarea={promptRef} disabled={faceSwap} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></span></div>
         <textarea ref={promptRef} id="edit-prompt" name="prompt" required readOnly={faceSwap} rows={7} maxLength={4000} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe what should change and what should stay the same..." className="w-full rounded-md border border-[#b8beb7] bg-white p-4 leading-7 outline-none focus:border-[var(--teal)] read-only:bg-[#f1f0eb]" />
         <label htmlFor="edit-negative-prompt" className="mb-2 mt-5 block text-sm font-bold">Negative prompt</label>
         <textarea id="edit-negative-prompt" name="negativePrompt" rows={4} maxLength={4000} defaultValue={initialRequest?.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT} className="w-full rounded-md border border-[#b8beb7] bg-white p-4 text-sm leading-6 outline-none focus:border-[var(--teal)]" />

@@ -8,6 +8,7 @@ import { listOutputs, publicAsset } from "@/lib/runtime/output-registry";
 import { FLUX_KLEIN_IMAGE_PRESET, getImageFallbackResolutions } from "@/lib/wan-gp/image-presets";
 import { lockedGuidanceScale } from "@/lib/wan-gp/image-guidance";
 import { getGenerationControls } from "@/lib/wan-gp/generation-controls";
+import { isPromptEnhancerConfigured } from "@/lib/prompt-enhancer/lm-studio";
 
 export const dynamic = "force-dynamic";
 export default async function CreateImagePage({ searchParams }: { searchParams: Promise<{ fromJob?: string }> }) {
@@ -34,5 +35,5 @@ export default async function CreateImagePage({ searchParams }: { searchParams: 
   const { fromJob } = await searchParams;
   const snapshot = fromJob ? getJob(fromJob)?.requestSnapshot : undefined;
   const initialRequest = snapshot?.workflowType === "image-create" ? snapshot.request : undefined;
-  return <><PageHeader eyebrow="Image Studio" title="Create an image" description="Shape a new image from your prompt using an approved local model." /><ImageCreateForm models={models} assets={assets} characters={characterSummaries(preferences.characters)} defaultModel={config.DEFAULT_IMAGE_CREATE_MODEL} initialRequest={initialRequest} /></>;
+  return <><PageHeader eyebrow="Image Studio" title="Create an image" description="Shape a new image from your prompt using an approved local model." /><ImageCreateForm models={models} assets={assets} characters={characterSummaries(preferences.characters)} defaultModel={config.DEFAULT_IMAGE_CREATE_MODEL} promptEnhancerEnabled={isPromptEnhancerConfigured()} initialRequest={initialRequest} /></>;
 }

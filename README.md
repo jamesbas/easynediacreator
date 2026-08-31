@@ -21,6 +21,7 @@ Powered by WanGP by DeepBeepMeep.
 - Select classifier-backed acceleration presets separately from character, style, motion, and other LoRAs.
 - Combine acceleration presets with additional validated content LoRAs; preset LoRAs are applied first.
 - Save a private default character prompt and insert it into image prompts at the cursor.
+- Enhance any generation prompt through a language model running in LM Studio, written for the checkpoint that will render it.
 - Follow, cancel, retry, clear, and reuse the settings of in-memory generation jobs.
 - Browse, download, reuse, and remove current-session outputs.
 
@@ -133,12 +134,45 @@ Job request snapshots and upload handles are stored in memory, so setting reuse 
 
 ### Video workflow controls
 
-- **Model discovery** lists every locally available MCP video model by its exact `model_type`; it is not restricted by an application video allow-list. `DEFAULT_VIDEO_MODEL` may name an exact model type. The legacy `ltx-2` value preserves the saved preferred LTX checkpoint when available.
+- **Model discovery** lists every locally available MCP video model by its exact `model_type`; it is not restricted by an application video allow-list. `DEFAULT_VIDEO_MODEL` may name an exact model type and defaults to `minimax_h3_fl2va_pruned_pdd`. The legacy `ltx-2` value preserves the saved preferred LTX checkpoint when available.
 - **Text or image input** follows model capabilities. Text-to-video models can submit without an image. Start and end pickers are enabled only when the selected model advertises those frame inputs, and a start image is required only when text-to-video is unavailable.
 - **Duration** uses the selected model's discovered minimum, maximum, increment, and default, falling back to 1–20 seconds with a 15-second default. Frame-based models receive an aligned frame count; seconds-based models receive `duration_seconds`.
 - **Frames per second** uses the discovered model range under **Advanced** and maps to WanGP's available `force_fps`, `fps`, or `frame_rate` setting.
 - **Start image / source strength** appears only when the selected model publishes a compatible strength setting, such as `input_video_strength`, `source_strength`, or `denoising_strength`.
 - **Steps** and **Guidance (CFG)** use discovered model bounds when published. Steps map to `num_inference_steps`; guidance maps to `guidance_scale` or `cfg_scale`.
+
+### Prompt enhancement
+
+Every prompt box on Create Image, Edit Image, and Create Video carries an **Enhance prompt** button. It sends the current prompt to a language model running locally in LM Studio (or any OpenAI-compatible server), replaces the prompt with the rewrite, and offers **Undo** to put the original back. The button is hidden entirely until a server is named:
+
+```env
+LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1
+# Empty asks LM Studio which model is currently loaded.
+LM_STUDIO_MODEL=
+LM_STUDIO_MAX_TOKENS=8000
+LM_STUDIO_TIMEOUT_MS=240000
+```
+
+Nothing leaves the machine: the rewrite is another local model call, and the prompt is never logged.
+
+The rewrite is written for the checkpoint that will render it, because the families disagree about what a good prompt is. FLUX and Krea have no dependable negative prompt, so exclusions are rewritten as the thing to render instead; Qwen is literal about structure and quoted lettering; Wan wants motion plus camera and little else; LTX wants one flowing present-tense paragraph and writes its own soundtrack from it. MiniMax H3 takes a labelled envelope rather than prose, so an H3 rewrite comes back as its published `integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music` structure with the alignment line that says where each supplied keyframe lands in time. Speech is tagged the way H3's guide requires, since an untagged quotation inside that format is description rather than a line to perform. An unrecognised checkpoint gets no family guidance at all — a prompt written for one model and rendered by another is worse than a neutral one.
+
+A reasoning model spends `LM_STUDIO_MAX_TOKENS` on thinking before it emits any content, so a budget that looks generous for the answer can still truncate it. Response format is negotiated once per process down `json_schema` → `json_object` → plain text; LM Studio accepts the first and last and refuses the middle one.
+
+#### Freeing the GPU before a render
+
+Enhancement and generation want the same card, and LM Studio keeps its model resident long after a rewrite finishes — its default idle TTL is an hour — so the next WanGP render can find no VRAM and fail with an out-of-memory hint. Every job therefore evicts the language model immediately before it is submitted, using LM Studio's `lms` CLI, which is the only interface that exposes unloading.
+
+It runs at submission rather than at queue time, because a queued job may wait minutes and the VRAM has to be free at the moment WanGP loads its checkpoint. It is skipped entirely when nothing is resident, so no process is spawned when LM Studio is closed. It can never fail a job: an unreachable server, a missing CLI or a failing one are logged and the render is attempted anyway.
+
+```env
+LM_STUDIO_UNLOAD_BEFORE_GENERATION=true
+# LM Studio puts `lms` on PATH; override for unusual installs.
+LM_STUDIO_CLI_PATH=lms
+LM_STUDIO_CLI_TIMEOUT_MS=60000
+```
+
+Set `LM_STUDIO_UNLOAD_BEFORE_GENERATION=false` on a machine with headroom for both, or one where the language model runs on different hardware. LM Studio reloads the model on the next enhancement by itself.
 
 ### Local application settings
 

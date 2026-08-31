@@ -7,6 +7,7 @@ import { CharacterLibrary } from "@/components/settings/character-library";
 import { config } from "@/lib/config";
 import { characterSummaries, getAppPreferences } from "@/lib/runtime/app-preferences";
 import { getModels } from "@/lib/runtime/model-cache";
+import { isPromptEnhancerConfigured } from "@/lib/prompt-enhancer/lm-studio";
 import { getWanGpClient } from "@/lib/wan-gp";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +32,8 @@ export default async function SettingsPage() {
         <StatusCell label="WanGP version" value={version ?? "Unavailable"} />
         <StatusCell label="Client mode" value={config.WANGP_CLIENT_MODE === "fake" ? "Development fixture" : "Local WanGP"} />
         <StatusCell label="GPU concurrency" value={`${config.MAX_ACTIVE_GENERATION_JOBS} active`} />
+        <StatusCell label="Prompt enhancer" value={isPromptEnhancerConfigured() ? config.LM_STUDIO_MODEL || "Loaded LM Studio model" : "Not configured"} tone={isPromptEnhancerConfigured() ? "good" : undefined} />
+        <StatusCell label="LM Studio" value={config.LM_STUDIO_BASE_URL ?? "Set LM_STUDIO_BASE_URL"} />
       </section>
       <section className="mt-8">
         <h2 className="mb-3 text-lg font-bold">Characters</h2>

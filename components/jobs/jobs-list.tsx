@@ -3,6 +3,7 @@
 import { Ban, RotateCw, SlidersHorizontal, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { GenerationSummaryChips } from "@/components/ui/generation-summary";
 import type { RuntimeJob, WorkflowType } from "@/lib/types";
 
 const reuseRoutes: Record<WorkflowType, string> = {
@@ -53,10 +54,10 @@ export function JobsList() {
               <div className="flex flex-wrap items-center gap-2">
                 <Status status={job.status} />
                 <span className="font-mono text-xs text-[var(--muted)]">{job.workflowType.replaceAll("-", " ")}</span>
-                <span className="text-xs text-[var(--muted)]">{job.modelKey}</span>
                 <time className="text-xs text-[var(--muted)]">{new Date(job.submittedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
               </div>
               <p className="mt-3 truncate font-semibold">{job.prompt}</p>
+              <GenerationSummaryChips summary={job.summary} modelKey={job.modelKey} className="mt-2" />
               <p className="mt-1 text-sm text-[var(--muted)]">{job.statusMessage}</p>
             </div>
             {["queued", "running"].includes(job.status) && <button title="Cancel job" aria-label="Cancel job" className="grid size-10 shrink-0 place-items-center rounded-md border border-[var(--line)] hover:bg-[#f7e1dc]" onClick={() => fetch(`/api/jobs/${job.id}/cancel`, { method: "POST" })}><Ban size={17} /></button>}

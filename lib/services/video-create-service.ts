@@ -5,6 +5,7 @@ import { getOutput } from "@/lib/runtime/output-registry";
 import { getUpload } from "@/lib/uploads/storage";
 import { buildVideoSettings } from "@/lib/wan-gp/adapters/video";
 import { getGenerationControls, validateGenerationControls } from "@/lib/wan-gp/generation-controls";
+import { summarizeGenerationSettings } from "@/lib/wan-gp/generation-summary";
 import { getVideoFallbackResolutions } from "@/lib/wan-gp/video-presets";
 import { enqueueJob } from "./job-runner";
 import { applyLoraAccelerationPreset, resolveLoraPreset, validateModelLoras } from "./lora-service";
@@ -33,7 +34,7 @@ export async function createVideo(request: VideoCreateRequest) {
   const preset = resolveLoraPreset(request.loraPresetId, normalizedRequest.loras, model.loraCatalog, model.modelType, "video-create");
   const settings = buildVideoSettings(normalizedRequest, model.defaults, model.schema, model.modelType, startPath, endPath);
   applyLoraAccelerationPreset(settings, preset, normalizedRequest.loras);
-  const job = createJob({ workflowType: "video-create", modelKey: request.modelKey, prompt: request.prompt, requestSnapshot: { workflowType: "video-create", request: normalizedRequest } });
+  const job = createJob({ workflowType: "video-create", modelKey: request.modelKey, prompt: request.prompt, requestSnapshot: { workflowType: "video-create", request: normalizedRequest }, summary: summarizeGenerationSettings(model.displayName, settings) });
   enqueueJob({ jobId: job.id, modelType: model.modelType, settings });
   return job;
 }

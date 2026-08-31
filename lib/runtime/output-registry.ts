@@ -1,12 +1,12 @@
 import path from "node:path";
 import { config } from "@/lib/config";
-import type { RuntimeAsset, WorkflowType } from "@/lib/types";
+import type { GenerationSummary, RuntimeAsset, WorkflowType } from "@/lib/types";
 import { assertPathInsideRoot } from "@/lib/security/path-policy";
 
 const globalOutputs = globalThis as unknown as { easyMediaOutputs?: Map<string, RuntimeAsset> };
 function store() { globalOutputs.easyMediaOutputs ??= new Map(); return globalOutputs.easyMediaOutputs; }
 
-export function registerOutput(input: { path: string; workflowType: WorkflowType; modelKey: string; prompt: string }) {
+export function registerOutput(input: { path: string; workflowType: WorkflowType; modelKey: string; prompt: string; summary?: GenerationSummary }) {
   const safePath = assertPathInsideRoot(input.path, config.WANGP_OUTPUT_ROOT);
   const extension = path.extname(safePath).toLowerCase();
   const asset: RuntimeAsset = { id: crypto.randomUUID(), type: [".mp4", ".webm", ".mov"].includes(extension) ? "video" : "image", ...input, path: safePath, filename: path.basename(safePath), createdAt: new Date().toISOString() };

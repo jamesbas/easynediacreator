@@ -5,6 +5,7 @@ import { buildFluxKleinImageSettings } from "@/lib/wan-gp/adapters/flux-klein-im
 import { buildKrea2ImageSettings } from "@/lib/wan-gp/adapters/krea2-image";
 import { buildQwenImageSettings } from "@/lib/wan-gp/adapters/qwen-image";
 import { getGenerationControls, validateGenerationControls } from "@/lib/wan-gp/generation-controls";
+import { summarizeGenerationSettings } from "@/lib/wan-gp/generation-summary";
 import { FLUX_KLEIN_IMAGE_PRESET, getImageFallbackResolutions } from "@/lib/wan-gp/image-presets";
 import { assertReferenceImagesAllowed } from "@/lib/wan-gp/reference-images";
 import { enqueueJob } from "./job-runner";
@@ -28,7 +29,7 @@ export async function createImage(request: ImageCreateRequest) {
       ? buildKrea2ImageSettings(normalizedRequest, model.defaults, model.schema, model.modelType)
       : buildFluxKleinImageSettings(normalizedRequest, model.defaults, model.schema, model.modelType, references);
   applyLoraAccelerationPreset(settings, preset, normalizedRequest.loras);
-  const job = createJob({ workflowType: "image-create", modelKey: request.modelKey, prompt: request.prompt, requestSnapshot: { workflowType: "image-create", request: normalizedRequest } });
+  const job = createJob({ workflowType: "image-create", modelKey: request.modelKey, prompt: request.prompt, requestSnapshot: { workflowType: "image-create", request: normalizedRequest }, summary: summarizeGenerationSettings(model.displayName, settings) });
   enqueueJob({ jobId: job.id, modelType: model.modelType, settings });
   return job;
 }

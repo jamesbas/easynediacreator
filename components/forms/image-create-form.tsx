@@ -8,13 +8,14 @@ import { DEFAULT_NEGATIVE_PROMPT, type ImageCreateRequest } from "@/lib/requests
 import type { LoraAccelerationPreset, LoraCatalog } from "@/lib/types";
 import type { GenerationControls } from "@/lib/wan-gp/generation-controls";
 import { hasGuidanceOneMarker } from "@/lib/wan-gp/image-guidance";
+import { EnhancePromptButton } from "./enhance-prompt-button";
 import { InsertCharacterButton } from "./insert-character-button";
 import { LoraSelector, readLoraSelections } from "./lora-selector";
 import { countReferenceSelection, emptyReferenceSelection, ReferenceImagePicker, selectedCharacterReferenceIds, uploadReferenceImage, type ReferenceAssetOption, type ReferenceSelectionState } from "./reference-image-picker";
 
 type FormModel = { key: string; displayName: string; availability: string; reason?: string; controls: GenerationControls; lockedGuidance?: number; maxReferenceImages?: number; loraCatalog: LoraCatalog; defaultLoras: { name: string; strength: number }[] };
 
-export function ImageCreateForm({ models, assets, characters, defaultModel, initialRequest }: { models: FormModel[]; assets: ReferenceAssetOption[]; characters: CharacterSummary[]; defaultModel: string; initialRequest?: ImageCreateRequest }) {
+export function ImageCreateForm({ models, assets, characters, defaultModel, promptEnhancerEnabled, initialRequest }: { models: FormModel[]; assets: ReferenceAssetOption[]; characters: CharacterSummary[]; defaultModel: string; promptEnhancerEnabled: boolean; initialRequest?: ImageCreateRequest }) {
   const router = useRouter();
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const reusableModel = models.find((model) => model.key === initialRequest?.modelKey && model.availability === "available");
@@ -59,7 +60,7 @@ export function ImageCreateForm({ models, assets, characters, defaultModel, init
     }}>
       <div className="space-y-6">
         <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="prompt" className="block text-sm font-bold">Prompt</label><InsertCharacterButton characters={characters} prompt={prompt} textarea={promptRef} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="prompt" className="block text-sm font-bold">Prompt</label><span className="flex flex-wrap items-center gap-2"><EnhancePromptButton enabled={promptEnhancerEnabled} prompt={prompt} context={{ workflowType: "image-create", modelKey, referenceCount }} onChange={setPrompt} onError={setError} /><InsertCharacterButton characters={characters} prompt={prompt} textarea={promptRef} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></span></div>
           <textarea ref={promptRef} id="prompt" name="prompt" required maxLength={4000} rows={9} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe the image, subject, setting, light, and visual treatment..." className="w-full resize-y rounded-md border border-[#b8beb7] bg-white p-4 text-base leading-7 outline-none focus:border-[var(--teal)] focus:ring-2 focus:ring-[#b5d9d3]" />
           <label htmlFor="negative-prompt" className="mb-2 mt-5 block text-sm font-bold">Negative prompt</label>
           <textarea id="negative-prompt" name="negativePrompt" maxLength={4000} rows={4} defaultValue={initialRequest?.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT} className="w-full resize-y rounded-md border border-[#b8beb7] bg-white p-4 text-sm leading-6 outline-none focus:border-[var(--teal)] focus:ring-2 focus:ring-[#b5d9d3]" />

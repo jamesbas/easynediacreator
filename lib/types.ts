@@ -3,6 +3,14 @@ import type { JobRequestSnapshot } from "@/lib/requests";
 export type WorkflowType = "image-create" | "image-edit" | "video-create";
 export type JobStatus = "draft" | "queued" | "running" | "completed" | "failed" | "cancel_requested" | "cancelled";
 
+/** The settings that were actually sent to WanGP, kept for at-a-glance display on job and output cards. */
+export type GenerationSummary = {
+  modelLabel: string;
+  resolution?: string;
+  steps?: number;
+  loras: Array<{ name: string; strength: string }>;
+};
+
 export type RuntimeJob = {
   id: string;
   wanGpJobId?: string;
@@ -11,6 +19,7 @@ export type RuntimeJob = {
   status: JobStatus;
   prompt: string;
   requestSnapshot: JobRequestSnapshot;
+  summary?: GenerationSummary;
   submittedAt: string;
   updatedAt: string;
   progressPercent?: number;
@@ -61,6 +70,7 @@ export type RuntimeAsset = {
   workflowType: WorkflowType;
   modelKey: string;
   prompt: string;
+  summary?: GenerationSummary;
   createdAt: string;
   filename: string;
   path: string;

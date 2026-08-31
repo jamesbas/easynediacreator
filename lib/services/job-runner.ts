@@ -4,6 +4,7 @@ import { registerOutput } from "@/lib/runtime/output-registry";
 import { getWanGpClient } from "@/lib/wan-gp";
 import { normalizeWanGpPromptSettings } from "@/lib/wan-gp/prompt";
 import { logger } from "@/lib/telemetry";
+import { releaseGpuForGeneration } from "./llm-runtime";
 
 type QueueItem = { jobId: string; modelType: string; settings: Record<string, unknown> };
 const state = globalThis as unknown as { easyMediaQueue?: QueueItem[]; easyMediaRunning?: number; easyMediaRecipes?: Map<string, QueueItem> };
@@ -28,6 +29,10 @@ async function processQueue() {
   if (!job || job.status !== "queued") { void processQueue(); return; }
   state.easyMediaRunning = (state.easyMediaRunning ?? 0) + 1;
   try {
+    // Done here rather than at enqueue: a queued job may wait minutes, and the
+    // VRAM has to be free at the moment WanGP loads its checkpoint.
+    const evicted = await releaseGpuForGeneration({ jobId: job.id });
+    if (evicted.length) updateJob(job.id, { statusMessage: "Freed GPU memory" });
     const submission = await getWanGpClient().generate(item.modelType, item.settings);
     updateJob(job.id, { status: "running", wanGpJobId: submission.jobId, progressPercent: 1, statusMessage: "Submitted to WanGP" });
     logger.info({ event: "job.submitted", jobId: job.id, wanGpJobId: submission.jobId }, "Generation submitted");
@@ -64,7 +69,7 @@ async function poll(jobId: string, wanGpJobId: string) {
     }
     if (snapshot.status === "cancelled") { updateJob(jobId, { status: "cancelled", statusMessage: "Cancelled" }); return; }
     if (snapshot.status === "failed") { updateJob(jobId, { status: "failed", statusMessage: "Generation failed", error: { message: snapshot.error ?? "WanGP generation failed." } }); return; }
-    const outputIds = (snapshot.outputPaths ?? []).map((outputPath) => registerOutput({ path: outputPath, workflowType: current.workflowType, modelKey: current.modelKey, prompt: current.prompt }).id);
+    const outputIds = (snapshot.outputPaths ?? []).map((outputPath) => registerOutput({ path: outputPath, workflowType: current.workflowType, modelKey: current.modelKey, prompt: current.prompt, summary: current.summary }).id);
     updateJob(jobId, { status: "completed", progressPercent: 100, statusMessage: "Completed", outputIds });
     logger.info({ event: "job.completed", jobId, outputCount: outputIds.length }, "Generation completed");
     return;

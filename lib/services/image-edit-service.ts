@@ -9,6 +9,7 @@ import { buildFluxKleinEditSettings } from "@/lib/wan-gp/adapters/flux-klein-edi
 import { buildKrea2ImageEditSettings } from "@/lib/wan-gp/adapters/krea2-image-edit";
 import { buildQwenImageEditSettings } from "@/lib/wan-gp/adapters/qwen-image-edit";
 import { getGenerationControls, validateGenerationControls } from "@/lib/wan-gp/generation-controls";
+import { summarizeGenerationSettings } from "@/lib/wan-gp/generation-summary";
 import { getImageFallbackResolutions } from "@/lib/wan-gp/image-presets";
 import { assertReferenceImagesAllowed } from "@/lib/wan-gp/reference-images";
 import { supportsTextToImage } from "@/lib/wan-gp/text-to-image";
@@ -50,7 +51,7 @@ export async function editImage(request: ImageEditRequest) {
     settings.activated_loras = [SHARPEN_UNBLUR_LORA.name];
     settings.loras_multipliers = `${SHARPEN_UNBLUR_LORA.strength}`;
   }
-  const job = createJob({ workflowType: "image-edit", modelKey: request.modelKey, prompt: normalizedRequest.prompt, requestSnapshot: { workflowType: "image-edit", request: normalizedRequest } });
+  const job = createJob({ workflowType: "image-edit", modelKey: request.modelKey, prompt: normalizedRequest.prompt, requestSnapshot: { workflowType: "image-edit", request: normalizedRequest }, summary: summarizeGenerationSettings(model.displayName, settings) });
   enqueueJob({ jobId: job.id, modelType: model.modelType, settings });
   return job;
 }
