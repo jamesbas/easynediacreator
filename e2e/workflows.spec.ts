@@ -255,6 +255,7 @@ test("does not accept arbitrary filesystem paths as asset handles", async ({ req
 test("shows exact WanGP model selections in Settings", async ({ page }) => {
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Approved models", exact: true })).toBeVisible();
+  await page.getByRole("heading", { name: "Approved models", exact: true }).click();
   const selectors = page.getByLabel("WanGP model");
   await expect(selectors).toHaveCount(6);
   await expect(page.getByText(/qwen_image_edit_fixture/)).toBeVisible();
@@ -301,6 +302,7 @@ test("saves an edited character in the library", async ({ page }) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ characters: [{ ...first, prompt: submitted.prompt, references: [] }] }) });
   });
   await page.goto("/settings");
+  await page.getByRole("heading", { name: "Characters", exact: true }).click();
   await expect(page.getByLabel("Character prompt").first()).not.toHaveValue("");
   await page.screenshot({ path: "test-results/desktop-character-prompt-settings.png", fullPage: true });
   await page.getByLabel("Character prompt").first().fill(customPrompt);

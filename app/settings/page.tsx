@@ -1,5 +1,6 @@
 import { CheckCircle2, CircleAlert, CircleX } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { RefreshModelsButton } from "@/components/settings/refresh-models-button";
 import { ModelSelectionControl } from "@/components/settings/model-selection-control";
 import { DefaultLoraSetting } from "@/components/settings/default-lora-setting";
@@ -27,25 +28,20 @@ export default async function SettingsPage() {
   return (
     <>
       <PageHeader eyebrow="System" title="Settings" description="Review WanGP connectivity, approved models, and safe local defaults." action={<RefreshModelsButton />} />
-      <section className="grid gap-px border border-[var(--line)] bg-[var(--line)] sm:grid-cols-2 lg:grid-cols-4">
+      <CollapsibleSection title="System status" meta={connected ? "Connected" : "Offline"} bodyClassName="grid gap-px bg-[var(--line)] sm:grid-cols-2 lg:grid-cols-4">
         <StatusCell label="WanGP MCP" value={connected ? "Connected" : "Offline"} tone={connected ? "good" : "bad"} />
         <StatusCell label="WanGP version" value={version ?? "Unavailable"} />
         <StatusCell label="Client mode" value={config.WANGP_CLIENT_MODE === "fake" ? "Development fixture" : "Local WanGP"} />
         <StatusCell label="GPU concurrency" value={`${config.MAX_ACTIVE_GENERATION_JOBS} active`} />
         <StatusCell label="Prompt enhancer" value={isPromptEnhancerConfigured() ? config.LM_STUDIO_MODEL || "Loaded LM Studio model" : "Not configured"} tone={isPromptEnhancerConfigured() ? "good" : undefined} />
         <StatusCell label="LM Studio" value={config.LM_STUDIO_BASE_URL ?? "Set LM_STUDIO_BASE_URL"} />
-      </section>
-      <section className="mt-8">
-        <h2 className="mb-3 text-lg font-bold">Characters</h2>
-        <p className="text-sm leading-6 text-[var(--muted)]">Save a prompt and reference photographs for each recurring character, then pull them into any generation by name.</p>
+      </CollapsibleSection>
+      <CollapsibleSection title="Characters" meta={`${preferences.characters.length} saved`} description="Save a prompt and reference photographs for each recurring character, then pull them into any generation by name.">
         <CharacterLibrary initialCharacters={characterSummaries(preferences.characters)} />
-      </section>
-      <section className="mt-8">
-        <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-bold">Approved models</h2><span className="font-mono text-xs text-[var(--muted)]">{models.length} workflow mappings</span></div>
-        <div className="divide-y divide-[var(--line)] border border-[var(--line)] bg-[var(--surface)]">
-          {models.length ? models.map((model) => <ModelRow key={`${model.workflowType}-${model.key}`} model={model} defaultLoras={preferences.defaultLoras[`${model.workflowType}:${model.key}`] ?? []} />) : <p className="p-5 text-sm text-[var(--muted)]">Model discovery is unavailable. Confirm that WanGP MCP is running locally.</p>}
-        </div>
-      </section>
+      </CollapsibleSection>
+      <CollapsibleSection title="Approved models" meta={`${models.length} workflow mappings`} bodyClassName="divide-y divide-[var(--line)]">
+        {models.length ? models.map((model) => <ModelRow key={`${model.workflowType}-${model.key}`} model={model} defaultLoras={preferences.defaultLoras[`${model.workflowType}:${model.key}`] ?? []} />) : <p className="p-5 text-sm text-[var(--muted)]">Model discovery is unavailable. Confirm that WanGP MCP is running locally.</p>}
+      </CollapsibleSection>
       <section className="mt-8 border-l-4 border-[var(--teal)] bg-[#e6f1ee] p-5"><h2 className="font-bold">Local processing</h2><p className="mt-1 text-sm leading-6 text-[var(--muted)]">Powered by WanGP by DeepBeepMeep. Prompts and media are processed by your locally hosted WanGP installation and outputs remain in its configured local folder.</p></section>
     </>
   );
