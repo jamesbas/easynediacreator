@@ -9,6 +9,7 @@ import { resetJobsForTests } from "@/lib/runtime/job-registry";
 import { resetOutputsForTests } from "@/lib/runtime/output-registry";
 import { resetUploadsForTests, storeImageUpload } from "@/lib/uploads/storage";
 import { createImage } from "@/lib/services/image-create-service";
+import { createVideo } from "@/lib/services/video-create-service";
 import { FakeWanGpClient } from "@/lib/wan-gp/fake-client";
 import { setWanGpClientForTests } from "@/lib/wan-gp";
 
@@ -81,5 +82,20 @@ describe("character library", () => {
     expect(settings.video_prompt_type).toBe("I");
     expect(settings.remove_background_images_ref).toBe(1);
     expect(settings.image_refs).toEqual([path.join(characterReferenceRoot, `${keeperReference.id}.png`), path.join(characterReferenceRoot, `${sailorReference.id}.png`), upload.path]);
+  });
+
+  it("carries a saved character into a reference-capable video model", async () => {
+    const client = new FakeWanGpClient();
+    setWanGpClientForTests(client);
+    const keeper = await createCharacter({ name: "Keeper" });
+    const reference = await addCharacterReference(keeper.id, await png("#204060"));
+
+    await createVideo({ prompt: "The keeper walks the gallery deck", negativePrompt: "blurry", modelKey: "minimax_video_fixture", characterReferenceIds: [reference.id], durationSeconds: 7, sourceStrength: 0.85, steps: 8, loras: [], advanced: {} });
+    const deadline = Date.now() + 1000;
+    while (!client.getLastSubmissionForTests() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const settings = client.getLastSubmissionForTests()?.settings as Record<string, unknown>;
+    expect(settings.image_refs).toEqual([path.join(characterReferenceRoot, `${reference.id}.png`)]);
+    expect(settings.video_prompt_type).toBe("I");
   });
 });

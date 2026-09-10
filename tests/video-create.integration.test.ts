@@ -48,6 +48,27 @@ describe("video creation", () => {
       .rejects.toThrow(/Start images are not supported/);
   });
 
+  it("sends reference images to a reference-capable video model with the letter WanGP needs", async () => {
+    const client = new FakeWanGpClient();
+    setWanGpClientForTests(client);
+    const buffer = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#3a7d68" } }).png().toBuffer();
+    const upload = await storeImageUpload(buffer, await validateImageBuffer(buffer));
+
+    await createVideo({ prompt: "The referenced violinist plays at dawn", negativePrompt: "blurry", modelKey: "minimax_video_fixture", referenceUploadIds: [upload.id], durationSeconds: 7, sourceStrength: 0.85, steps: 8, loras: [], advanced: {} });
+    const deadline = Date.now() + 1000;
+    while (!client.getLastSubmissionForTests() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(client.getLastSubmissionForTests()?.settings).toMatchObject({ image_refs: [upload.path], video_prompt_type: "I" });
+  });
+
+  it("refuses references on a video model that publishes no reference selector", async () => {
+    const buffer = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#3a7d68" } }).png().toBuffer();
+    const upload = await storeImageUpload(buffer, await validateImageBuffer(buffer));
+
+    await expect(createVideo({ prompt: "No references here", negativePrompt: "blurry", modelKey: "ltx-2", referenceUploadIds: [upload.id], durationSeconds: 15, sourceStrength: 0.85, steps: 8, loras: [], advanced: {} }))
+      .rejects.toThrow(/does not accept reference images/);
+  });
+
   it("rejects video values outside the selected model constraints", async () => {
     const buffer = await sharp({ create: { width: 64, height: 36, channels: 3, background: "#dda928" } }).png().toBuffer();
     const upload = await storeImageUpload(buffer, await validateImageBuffer(buffer));

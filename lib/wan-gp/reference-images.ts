@@ -15,6 +15,30 @@ export const REFERENCE_IMAGE_CAPABILITY = "reference-image";
 export const REFERENCE_SUBJECTS_ONLY = "I";
 export const REFERENCE_LEAD_WITH_SCENE = "KI";
 
+/** The request schema caps a selection at eight; MiniMax H3 Ref2VA allows nine. */
+export const MAX_VIDEO_REFERENCE_IMAGES = 8;
+
+function record(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+/**
+ * How many reference images a discovered video checkpoint really takes.
+ *
+ * `media_inputs.image.reference` is true on MiniMax H3 FL2VA as well, where it
+ * covers injected frames rather than references — WanGP only offers a reference
+ * selector when `video_prompt_type.image_ref_choices` is published, which FL2VA
+ * leaves null and Ref2VA fills in. Trusting the flag alone would put a picker
+ * in front of a model that silently discards everything attached to it.
+ */
+export function discoveredReferenceImageLimit(metadata: Record<string, unknown>) {
+  const choices = record(record(record(metadata.setting_values).video_prompt_type).image_ref_choices);
+  if (!Array.isArray(choices.choices)) return 0;
+  const image = record(record(metadata.media_inputs).image);
+  if (image.multiple_references === true) return MAX_VIDEO_REFERENCE_IMAGES;
+  return image.reference === true ? 1 : 0;
+}
+
 type ReferenceCapableModel = Pick<ModelOption, "capabilities" | "maxReferenceImages" | "sourceUsesReferenceSlot">;
 
 export function supportsReferenceImages(model: ReferenceCapableModel) {

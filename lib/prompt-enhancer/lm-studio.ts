@@ -25,6 +25,7 @@ export type CompletionResult<T> = { ok: true; value: T; model: string } | { ok: 
 
 type ResponseFormat = { type: "text" } | { type: "json_object" } | { type: "json_schema"; json_schema: { name: string; strict: boolean; schema: Record<string, unknown> } };
 type ChatChoice = { message?: { content?: string | null; reasoning_content?: string | null }; finish_reason?: string | null };
+type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 
 /**
  * How we ask for JSON, best first.
@@ -52,38 +53,54 @@ function restOrigin() {
   }
 }
 
-let resolvedModel: { id: string; at: number } | undefined;
+let resolvedModel: { id: string; vision: boolean | undefined; at: number } | undefined;
 const MODEL_CACHE_MS = 60_000;
 
 /**
- * The model to send to.
+ * The model to send to, and whether it can read a picture.
  *
  * A pinned id wins. Without one we ask LM Studio which model is actually
  * resident — `/v1/models` lists what exists, `/api/v0/models` says what is
  * loaded — so the feature works from a base URL alone. Never cached for long:
  * the point of the reading is that a human may change it underneath us.
+ *
+ * `vision` is `undefined` rather than `false` when LM Studio does not answer,
+ * because "we could not ask" and "it cannot see" call for different behaviour.
  */
-export async function resolveModelId(): Promise<string | undefined> {
-  if (config.LM_STUDIO_MODEL) return config.LM_STUDIO_MODEL;
-  if (resolvedModel && Date.now() - resolvedModel.at < MODEL_CACHE_MS) return resolvedModel.id;
+export async function resolveModel(): Promise<{ id: string; vision: boolean | undefined } | undefined> {
+  if (resolvedModel && Date.now() - resolvedModel.at < MODEL_CACHE_MS) return resolvedModel;
   const origin = restOrigin();
-  if (!origin) return undefined;
+  const pinned = config.LM_STUDIO_MODEL;
+  if (!origin) return pinned ? { id: pinned, vision: undefined } : undefined;
   try {
     const response = await fetch(`${origin}/api/v0/models`, { cache: "no-store", signal: AbortSignal.timeout(5000) });
-    if (!response.ok) return undefined;
-    const body = (await response.json()) as { data?: { id?: unknown; state?: unknown }[] };
-    const models = (body.data ?? []).filter((model): model is { id: string; state?: string } => typeof model.id === "string");
-    const id = models.find((model) => model.state === "loaded")?.id ?? models[0]?.id;
-    if (id) resolvedModel = { id, at: Date.now() };
-    return id;
+    if (!response.ok) return pinned ? { id: pinned, vision: undefined } : undefined;
+    const body = (await response.json()) as { data?: { id?: unknown; state?: unknown; type?: unknown }[] };
+    const models = (body.data ?? []).filter((model): model is { id: string; state?: string; type?: string } => typeof model.id === "string");
+    const chosen = pinned ? models.find((model) => model.id === pinned) : models.find((model) => model.state === "loaded") ?? models[0];
+    const id = chosen?.id ?? pinned;
+    if (!id) return undefined;
+    // LM Studio types a multimodal checkpoint `vlm` and a text-only one `llm`.
+    const resolved = { id, vision: chosen?.type ? chosen.type === "vlm" : undefined, at: Date.now() };
+    resolvedModel = resolved;
+    return resolved;
   } catch {
-    return undefined;
+    return pinned ? { id: pinned, vision: undefined } : undefined;
   }
+}
+
+export async function resolveModelId() {
+  return (await resolveModel())?.id;
 }
 
 /** A server that rejects a response format says so in the message. */
 function isFormatRejection(message: string) {
   return /response_format|json_schema|response format/i.test(message);
+}
+
+/** A text-only checkpoint names the image part it could not take. */
+function isImageRejection(message: string) {
+  return /image|vision|multimodal|mmproj/i.test(message);
 }
 
 /**
@@ -112,13 +129,24 @@ export async function completeJson<T>(options: {
   schema: ZodType<T>;
   schemaName: string;
   jsonSchema: Record<string, unknown>;
+  images?: { label: string; dataUrl: string }[];
 }): Promise<CompletionResult<T>> {
   const baseUrl = config.LM_STUDIO_BASE_URL;
   if (!baseUrl) return { ok: false, reason: "not_configured", detail: "Set LM_STUDIO_BASE_URL to enable prompt enhancement." };
-  const model = await resolveModelId();
-  if (!model) return { ok: false, reason: "no_model", detail: "No model is loaded in LM Studio. Load one, or set LM_STUDIO_MODEL." };
+  const resolved = await resolveModel();
+  if (!resolved) return { ok: false, reason: "no_model", detail: "No model is loaded in LM Studio. Load one, or set LM_STUDIO_MODEL." };
+  const model = resolved.id;
+  // A text-only checkpoint rejects an image part outright, so pictures are sent
+  // only when LM Studio calls the model multimodal or will not say either way.
+  let images = resolved.vision === false ? [] : options.images ?? [];
+  if (images.length && resolved.vision === false) logger.info({ event: "prompt_enhancer.vision_unavailable", model }, "Loaded model cannot read images; enhancing from text alone");
 
   const call = async (format: ResponseFormat | null) => {
+    const content: ContentPart[] = [{ type: "text", text: options.user }];
+    for (const image of images) {
+      content.push({ type: "text", text: image.label });
+      content.push({ type: "image_url", image_url: { url: image.dataUrl } });
+    }
     const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${config.LM_STUDIO_API_KEY || "local"}` },
@@ -126,7 +154,7 @@ export async function completeJson<T>(options: {
       signal: AbortSignal.timeout(config.LM_STUDIO_TIMEOUT_MS),
       body: JSON.stringify({
         model,
-        messages: [{ role: "system", content: options.system }, { role: "user", content: options.user }],
+        messages: [{ role: "system", content: options.system }, { role: "user", content: images.length ? content : options.user }],
         ...(format ? { response_format: format } : {}),
         temperature: config.LM_STUDIO_TEMPERATURE,
         // Reasoning models spend this budget thinking before any content.
@@ -150,7 +178,19 @@ export async function completeJson<T>(options: {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       lastError = message;
-      if (!isFormatRejection(message)) return { ok: false, reason: "request_failed", detail: message };
+      // A server that will not take the pictures still writes a better prompt
+      // than no rewrite at all, so they are dropped and the format retried.
+      if (images.length && isImageRejection(message)) {
+        logger.warn({ event: "prompt_enhancer.vision_rejected", model }, "LM Studio refused the images; enhancing from text alone");
+        images = [];
+        try {
+          choice = (await call(format)).choices?.[0];
+          continue;
+        } catch (retryError) {
+          lastError = retryError instanceof Error ? retryError.message : String(retryError);
+        }
+      }
+      if (!isFormatRejection(lastError)) return { ok: false, reason: "request_failed", detail: lastError };
       // A rejected format is a fact about the server, so it holds for later calls.
       unsupportedFormats.add(kind);
       logger.warn({ event: "prompt_enhancer.format_unsupported", format: kind }, "LM Studio rejected a response format");

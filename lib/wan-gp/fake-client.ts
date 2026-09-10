@@ -27,7 +27,12 @@ export class FakeWanGpClient implements WanGpClient {
   async getModelMetadata(modelType: string) {
     const model = this.requireModel(modelType);
     const capabilities = model.output !== "video" ? ["text-to-image"] : model.family === "ltx2" ? ["text-to-video", "image-to-video", "start-frame", "end-frame"] : ["text-to-video"];
-    return { ...model, capabilities };
+    // The MiniMax fixture stands in for H3 Ref2VA, which publishes a reference
+    // selector; FL2VA does not, so the flag alone must never be enough.
+    const references = model.family === "minimax"
+      ? { media_inputs: { image: { reference: true, multiple_references: true } }, setting_values: { video_prompt_type: { image_ref_choices: { choices: [{ label: "Generate without Reference Images", value: "" }, { label: "Use Reference Images", value: "I" }] } } } }
+      : {};
+    return { ...model, ...references, capabilities };
   }
   async getModelAvailability(modelType: string) { this.requireModel(modelType); return { status: "available" as const }; }
   async getDefaultSettings(modelType: string) {

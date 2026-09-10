@@ -1,7 +1,8 @@
 import type { VideoCreateRequest } from "@/lib/requests";
+import { REFERENCE_SUBJECTS_ONLY } from "../reference-images";
 import { applyLoraSettings, applySamplingSettings, applyVideoDuration, setDiscoveredSetting } from "../settings-builder";
 
-export function buildVideoSettings(request: VideoCreateRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string, startPath?: string, endPath?: string) {
+export function buildVideoSettings(request: VideoCreateRequest, defaults: Record<string, unknown>, schema: Record<string, unknown>, modelType: string, startPath?: string, endPath?: string, referencePaths: string[] = []) {
   if (Object.keys(request.advanced).length) throw new Error("The selected model does not allow these advanced settings.");
   const settings = { ...defaults };
   setDiscoveredSetting(settings, schema, defaults, modelType, ["prompt", "text_prompt"], request.prompt, true);
@@ -15,6 +16,12 @@ export function buildVideoSettings(request: VideoCreateRequest, defaults: Record
   setDiscoveredSetting(settings, schema, defaults, modelType, ["image_start", "start_image", "start_frame", "input_image", "image"], startPath, Boolean(startPath));
   setDiscoveredSetting(settings, schema, defaults, modelType, ["image_end", "end_image", "end_frame"], endPath, Boolean(endPath));
   if (startPath) setDiscoveredSetting(settings, schema, defaults, modelType, ["input_video_strength", "source_strength", "denoising_strength"], request.sourceStrength);
+  if (referencePaths.length) {
+    // Reference images are people or objects rather than the scene being edited,
+    // and WanGP ignores `image_refs` unless `video_prompt_type` carries the letter.
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["image_refs"], referencePaths, true);
+    setDiscoveredSetting(settings, schema, defaults, modelType, ["video_prompt_type"], REFERENCE_SUBJECTS_ONLY, true);
+  }
 
   setDiscoveredSetting(settings, schema, defaults, modelType, ["resolution", "size"], request.resolution);
   const defaultFps = Number(defaults.force_fps ?? defaults.fps ?? defaults.frame_rate);

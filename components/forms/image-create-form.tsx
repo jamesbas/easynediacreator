@@ -31,12 +31,21 @@ export function ImageCreateForm({ models, assets, characters, defaultModel, prom
   const [selectedLoraNames, setSelectedLoraNames] = useState<string[]>(initialRequest?.loras.map((lora) => lora.name) ?? []);
   const [reuseSelections, setReuseSelections] = useState(Boolean(reusableModel));
   const [references, setReferences] = useState<ReferenceSelectionState>(emptyReferenceSelection);
+  const uploadedReferences = useRef(new Map<string, string>());
   const referenceCount = countReferenceSelection(references, characters);
   const lockedGuidance = preset?.settings.guidanceScale ?? selected?.lockedGuidance ?? (modelKey === "qwen-image" && hasGuidanceOneMarker(selectedLoraNames) ? 1 : undefined);
   const guidanceLocked = lockedGuidance !== undefined;
   const effectiveGuidance = lockedGuidance ?? guidanceScale;
   const effectiveSolver = preset?.settings.sampleSolver ?? sampleSolver;
   const handleLoraSelectionChange = useCallback((loras: { name: string }[]) => setSelectedLoraNames(loras.map((lora) => lora.name)), []);
+  /** One upload per picked file, so enhancing before submitting does not send it twice. */
+  const storedReferenceIds = useCallback(async (picked: ReferenceSelectionState["files"]) => Promise.all(picked.map(async (reference) => {
+    const cached = uploadedReferences.current.get(reference.id);
+    if (cached) return cached;
+    const uploadId = await uploadReferenceImage(reference.file);
+    uploadedReferences.current.set(reference.id, uploadId);
+    return uploadId;
+  })), []);
   const [error, setError] = useState(initialRequest && !reusableModel ? "The saved model is no longer available. Choose another model before submitting." : "");
   const [submitting, setSubmitting] = useState(false);
   const referenceCapableModels = models.filter((model) => model.maxReferenceImages);
@@ -48,7 +57,7 @@ export function ImageCreateForm({ models, assets, characters, defaultModel, prom
       event.preventDefault(); setError(""); setSubmitting(true);
       const data = new FormData(event.currentTarget);
       try {
-        const referenceUploadIds = await Promise.all(references.files.map((reference) => uploadReferenceImage(reference.file)));
+        const referenceUploadIds = await storedReferenceIds(references.files);
         const response = await fetch("/api/jobs/image-create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: data.get("prompt"), negativePrompt: data.get("negativePrompt"), modelKey, resolution: data.get("resolution") || undefined, count: Number(data.get("count")), steps, guidanceScale: selected?.controls.guidance ? effectiveGuidance : undefined, sampleSolver: sampleSolver || undefined, scheduler: scheduler || undefined, loraPresetId: data.get("loraPresetId") || undefined, seed: data.get("seed") ? Number(data.get("seed")) : undefined, loras: readLoraSelections(data), referenceUploadIds, referenceAssetIds: references.assetIds, characterReferenceIds: selectedCharacterReferenceIds(references, characters), advanced: {} }) });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error ?? "Generation could not be started.");
@@ -60,7 +69,7 @@ export function ImageCreateForm({ models, assets, characters, defaultModel, prom
     }}>
       <div className="space-y-6">
         <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="prompt" className="block text-sm font-bold">Prompt</label><span className="flex flex-wrap items-center gap-2"><EnhancePromptButton enabled={promptEnhancerEnabled} prompt={prompt} context={{ workflowType: "image-create", modelKey, referenceCount }} onChange={setPrompt} onError={setError} /><InsertCharacterButton characters={characters} prompt={prompt} textarea={promptRef} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></span></div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="prompt" className="block text-sm font-bold">Prompt</label><span className="flex flex-wrap items-center gap-2"><EnhancePromptButton enabled={promptEnhancerEnabled} prompt={prompt} context={{ workflowType: "image-create", modelKey, referenceCount }} prepareImages={async () => ({ referenceUploadIds: await storedReferenceIds(references.files), referenceAssetIds: references.assetIds, characterReferenceIds: selectedCharacterReferenceIds(references, characters) })} onChange={setPrompt} onError={setError} /><InsertCharacterButton characters={characters} prompt={prompt} textarea={promptRef} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></span></div>
           <textarea ref={promptRef} id="prompt" name="prompt" required maxLength={4000} rows={9} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe the image, subject, setting, light, and visual treatment..." className="w-full resize-y rounded-md border border-[#b8beb7] bg-white p-4 text-base leading-7 outline-none focus:border-[var(--teal)] focus:ring-2 focus:ring-[#b5d9d3]" />
           <label htmlFor="negative-prompt" className="mb-2 mt-5 block text-sm font-bold">Negative prompt</label>
           <textarea id="negative-prompt" name="negativePrompt" maxLength={4000} rows={4} defaultValue={initialRequest?.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT} className="w-full resize-y rounded-md border border-[#b8beb7] bg-white p-4 text-sm leading-6 outline-none focus:border-[var(--teal)] focus:ring-2 focus:ring-[#b5d9d3]" />

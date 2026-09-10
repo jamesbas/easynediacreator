@@ -86,11 +86,13 @@ export const imageEditRequestSchema = baseGenerationSchema.extend({
 export type ImageEditRequest = z.infer<typeof imageEditRequestSchema>;
 
 export const videoCreateRequestSchema = baseGenerationSchema.extend({
+  ...referenceSelectionFields,
   startUploadId: z.string().uuid().optional(), startAssetId: z.string().uuid().optional(),
   endUploadId: z.string().uuid().optional(), endAssetId: z.string().uuid().optional(),
   durationSeconds: z.number().int().min(1).max(3600).default(15), fps: z.number().int().min(1).max(240).optional(), sourceStrength: z.number().finite().min(0).max(1).default(0.85), steps: z.number().int().min(1).max(1000).optional(), guidanceScale: z.number().finite().min(0).max(100).optional(),
 }).refine((value) => !(value.startUploadId && value.startAssetId), { message: "Choose only one start image." })
-  .refine((value) => !(value.endUploadId && value.endAssetId), { message: "Choose only one end image." });
+  .refine((value) => !(value.endUploadId && value.endAssetId), { message: "Choose only one end image." })
+  .refine((value) => countReferences(value) <= 8, { message: "Choose no more than 8 reference images.", path: ["referenceUploadIds"] });;
 
 export type VideoCreateRequest = z.infer<typeof videoCreateRequestSchema>;
 export type LoraSelection = z.infer<typeof loraSelectionSchema>;

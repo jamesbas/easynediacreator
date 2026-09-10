@@ -3,7 +3,7 @@
 import { ImagePlus, Paintbrush, Sparkles, Trash2, Upload, UserRoundCheck } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FACE_SWAP_LORAS, faceSwapPrompt, FACE_SWAP_STEPS } from "@/lib/face-swap-preset";
 import { CHARACTER_GENDERS, type CharacterGender, type CharacterSummary } from "@/lib/character-prompt";
 import { DEFAULT_NEGATIVE_PROMPT, type ImageEditRequest } from "@/lib/requests";
@@ -33,6 +33,7 @@ async function uploadImage(file: File) {
 export function ImageEditForm({ models, assets, characters, defaultModel, promptEnhancerEnabled, initialAssetId, initialRequest }: { models: FormModel[]; assets: AssetOption[]; characters: CharacterSummary[]; defaultModel: string; promptEnhancerEnabled: boolean; initialAssetId?: string; initialRequest?: ImageEditRequest }) {
   const router = useRouter();
   const previewUrls = useRef(new Set<string>());
+  const uploadedFiles = useRef(new Map<string, string>());
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const previousPrompt = useRef("");
   const previousSteps = useRef(20);
@@ -82,7 +83,7 @@ export function ImageEditForm({ models, assets, characters, defaultModel, prompt
   const effectiveGuidance = faceSwap ? 1 : accelerationPreset?.settings.guidanceScale ?? guidanceScale;
   const effectiveSolver = faceSwap ? "lightning" : accelerationPreset?.settings.sampleSolver ?? sampleSolver;
 
-  const selectModel = useCallback((nextKey: string) => {
+  const selectModel = (nextKey: string) => {
     const next = models.find((model) => model.key === nextKey);
     setModelKey(nextKey);
     setSteps(next?.controls.steps.defaultValue ?? 20);
@@ -91,15 +92,15 @@ export function ImageEditForm({ models, assets, characters, defaultModel, prompt
     setScheduler(next?.controls.defaultScheduler ?? "");
     setAccelerationPreset(undefined);
     setReuseSelections(false);
-  }, [models]);
+  };
 
-  const createPreview = useCallback((next: File) => {
+  const createPreview = (next: File) => {
     const url = URL.createObjectURL(next);
     previewUrls.current.add(url);
     return url;
-  }, []);
+  };
 
-  const addSourceFiles = useCallback((files: File[]) => {
+  const addSourceFiles = (files: File[]) => {
     const valid = files.filter((item) => item.type.startsWith("image/"));
     const remaining = (batchPreset ? MAX_BATCH_SOURCES : 1) - (batchPreset ? sourceFiles.length : 0);
     const accepted = valid.slice(0, Math.max(0, remaining));
@@ -119,7 +120,7 @@ export function ImageEditForm({ models, assets, characters, defaultModel, prompt
     });
     setSourceUploadId("");
     setSourceAssetId("");
-  }, [batchPreset, createPreview, sourceFiles.length]);
+  };
 
   const removeSourceFile = (id: string) => {
     setSourceFiles((current) => current.filter((item) => {
@@ -160,7 +161,7 @@ export function ImageEditForm({ models, assets, characters, defaultModel, prompt
     if (!selected || !supportsTextToImage(selected)) { const fallback = textToImageModels[0]; if (fallback) selectModel(fallback.key); }
   };
 
-  const addReferenceFiles = useCallback((files: File[]) => {
+  const addReferenceFiles = (files: File[]) => {
     const target = selected?.maxReferenceImages ? selected : referenceModels[0];
     if (!target) {
       setError("No installed image-edit model accepts reference images.");
@@ -178,7 +179,7 @@ export function ImageEditForm({ models, assets, characters, defaultModel, prompt
     setReferenceFiles((current) => [...current, ...accepted.map((item) => ({ id: crypto.randomUUID(), file: item, preview: createPreview(item) }))]);
     if (accepted.length && faceSwap) setFaceSwapReferenceId("");
     if (accepted.length && target.key !== modelKey) selectModel(target.key);
-  }, [createPreview, faceSwap, manualReferenceCount, modelKey, referenceCount, referenceModels, selectModel, selected, skipSource]);
+  };
 
   const clearManualReferences = () => {
     setReferenceFiles((current) => {
@@ -260,19 +261,45 @@ export function ImageEditForm({ models, assets, characters, defaultModel, prompt
     }
   };
 
+  // Read through a ref so pasting does not resubscribe on every render: the
+  // handler is rebuilt each time now that the compiler memoizes it for us.
+  const pasteSource = useRef<(files: File[]) => void>(undefined);
+  useEffect(() => { pasteSource.current = skipSource ? undefined : addSourceFiles; });
+
   useEffect(() => {
     const paste = (event: ClipboardEvent) => {
       const images = [...(event.clipboardData?.files ?? [])].filter((item) => item.type.startsWith("image/"));
-      if (images.length && !skipSource) addSourceFiles(images);
+      if (images.length) pasteSource.current?.(images);
     };
     window.addEventListener("paste", paste);
     return () => window.removeEventListener("paste", paste);
-  }, [addSourceFiles, skipSource]);
+  }, []);
 
   useEffect(() => {
     const urls = previewUrls.current;
     return () => urls.forEach((url) => URL.revokeObjectURL(url));
   }, []);
+
+  /** One upload per picked file, so enhancing before submitting does not send it twice. */
+  async function cachedUpload(item: ReferenceFile) {
+    const cached = uploadedFiles.current.get(item.id);
+    if (cached) return cached;
+    const uploadId = await uploadImage(item.file);
+    uploadedFiles.current.set(item.id, uploadId);
+    return uploadId;
+  }
+
+  async function prepareEnhanceImages() {
+    const pickedSource = !skipSource && sourceFiles[0] ? await cachedUpload(sourceFiles[0]) : undefined;
+    const chosenSource = pickedSource ?? (skipSource ? undefined : sourceUploadId || undefined);
+    return {
+      sourceUploadId: chosenSource,
+      sourceAssetId: !skipSource && !chosenSource ? sourceAssetId || undefined : undefined,
+      referenceUploadIds: [...referenceUploadIds, ...await Promise.all(referenceFiles.map(cachedUpload))],
+      referenceAssetIds,
+      characterReferenceIds: selectedCharacterReferenceIds,
+    };
+  }
 
   return <form className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]" onSubmit={async (event) => {
     event.preventDefault();
@@ -287,9 +314,9 @@ export function ImageEditForm({ models, assets, characters, defaultModel, prompt
     let submittedCount = 0;
     try {
       const submittedSourceUploadIds: Array<string | undefined> = [];
-      if (!skipSource) for (const source of sourceFiles) submittedSourceUploadIds.push(await uploadImage(source.file));
+      if (!skipSource) for (const source of sourceFiles) submittedSourceUploadIds.push(await cachedUpload(source));
       if (!submittedSourceUploadIds.length) submittedSourceUploadIds.push(skipSource ? undefined : sourceUploadId || undefined);
-      const submittedReferenceUploadIds = [...referenceUploadIds, ...await Promise.all(referenceFiles.map((reference) => uploadImage(reference.file)))];
+      const submittedReferenceUploadIds = [...referenceUploadIds, ...await Promise.all(referenceFiles.map(cachedUpload))];
       const data = new FormData(form);
       let lastJobId = "";
       for (const submittedSourceUploadId of submittedSourceUploadIds) {
@@ -392,7 +419,7 @@ export function ImageEditForm({ models, assets, characters, defaultModel, prompt
       </section>
 
       <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="edit-prompt" className="block text-sm font-bold">Edit prompt</label><span className="flex flex-wrap items-center gap-2"><EnhancePromptButton enabled={promptEnhancerEnabled} prompt={prompt} disabled={batchPreset} context={{ workflowType: "image-edit", modelKey, hasSourceImage: !skipSource && sourceCount > 0, referenceCount }} onChange={setPrompt} onError={setError} /><InsertCharacterButton characters={characters} prompt={prompt} textarea={promptRef} disabled={faceSwap} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></span></div>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="edit-prompt" className="block text-sm font-bold">Edit prompt</label><span className="flex flex-wrap items-center gap-2"><EnhancePromptButton enabled={promptEnhancerEnabled} prompt={prompt} disabled={batchPreset} context={{ workflowType: "image-edit", modelKey, hasSourceImage: !skipSource && sourceCount > 0, referenceCount }} prepareImages={prepareEnhanceImages} onChange={setPrompt} onError={setError} /><InsertCharacterButton characters={characters} prompt={prompt} textarea={promptRef} disabled={faceSwap} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></span></div>
         <textarea ref={promptRef} id="edit-prompt" name="prompt" required readOnly={faceSwap} rows={7} maxLength={4000} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe what should change and what should stay the same..." className="w-full rounded-md border border-[#b8beb7] bg-white p-4 leading-7 outline-none focus:border-[var(--teal)] read-only:bg-[#f1f0eb]" />
         <label htmlFor="edit-negative-prompt" className="mb-2 mt-5 block text-sm font-bold">Negative prompt</label>
         <textarea id="edit-negative-prompt" name="negativePrompt" rows={4} maxLength={4000} defaultValue={initialRequest?.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT} className="w-full rounded-md border border-[#b8beb7] bg-white p-4 text-sm leading-6 outline-none focus:border-[var(--teal)]" />

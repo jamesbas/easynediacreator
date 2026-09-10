@@ -2,7 +2,7 @@ import { config } from "@/lib/config";
 import type { ModelOption, WorkflowType } from "@/lib/types";
 import type { WanGpClient, WanGpModelSummary } from "./client";
 import { classifyLoraCatalog } from "./lora-classifier/classify";
-import { REFERENCE_IMAGE_CAPABILITY } from "./reference-images";
+import { discoveredReferenceImageLimit, REFERENCE_IMAGE_CAPABILITY } from "./reference-images";
 import { hasExplicitSetting } from "./settings-builder";
 
 export type LogicalRule = { key: string; displayName: string; workflowType: WorkflowType; family: string; output: "image" | "video"; requiresImage?: boolean; modelType?: string; namePattern?: RegExp; preferredPatterns?: RegExp[]; maxReferenceImages?: number; sourceUsesReferenceSlot?: boolean };
@@ -94,10 +94,12 @@ export async function discoverModels(client: WanGpClient, selections: Record<str
     const effectiveSchema = Object.keys(schema).length ? schema : { metadata };
     // Reference support is declared by the rule as well as discovered, because WanGP
     // reports `media_inputs` inconsistently and a missed capability silently drops
-    // every reference the user attached.
-    const capabilities = [...new Set([...getWanGpCapabilities(metadata), ...(rule.maxReferenceImages ? [REFERENCE_IMAGE_CAPABILITY] : [])])];
+    // every reference the user attached. Video checkpoints have no rule of their own,
+    // so their limit comes from the published reference selector.
+    const maxReferenceImages = rule.maxReferenceImages ?? (rule.workflowType === "video-create" ? discoveredReferenceImageLimit(metadata) || undefined : undefined);
+    const capabilities = [...new Set([...getWanGpCapabilities(metadata), ...(maxReferenceImages ? [REFERENCE_IMAGE_CAPABILITY] : [])])];
     const sourceUsesReferenceSlot = rule.sourceUsesReferenceSlot || (rule.key === "qwen-image-edit" && !hasExplicitSetting(effectiveSchema, defaults, ["image_guide"]));
     const classifiedCatalog = await classifyLoraCatalog({ catalog: loraCatalog, schema: effectiveSchema, metadata, modelType: model.modelType, workflowType: rule.workflowType, profilesRoot: config.WANGP_PROFILES_ROOT, metadataRoot: config.WANGP_LORA_METADATA_ROOT, overridesPath: config.WANGP_LORA_CLASSIFIER_OVERRIDES });
-    return { key: rule.key, displayName: model.name || rule.displayName, workflowType: rule.workflowType, modelType: model.modelType, availability: availability.status, reason: availability.reason, schema: effectiveSchema, defaults, capabilities, maxReferenceImages: rule.maxReferenceImages, sourceUsesReferenceSlot, loraCatalog: classifiedCatalog, candidates };
+    return { key: rule.key, displayName: model.name || rule.displayName, workflowType: rule.workflowType, modelType: model.modelType, availability: availability.status, reason: availability.reason, schema: effectiveSchema, defaults, capabilities, maxReferenceImages, sourceUsesReferenceSlot, loraCatalog: classifiedCatalog, candidates };
   }));
 }

@@ -11,6 +11,7 @@ import type { GenerationControls } from "@/lib/wan-gp/generation-controls";
 import { EnhancePromptButton } from "./enhance-prompt-button";
 import { InsertCharacterButton } from "./insert-character-button";
 import { LoraSelector, readLoraSelections } from "./lora-selector";
+import { countReferenceSelection, emptyReferenceSelection, ReferenceImagePicker, selectedCharacterReferenceIds, uploadReferenceImage, type ReferenceSelectionState } from "./reference-image-picker";
 
 type FormModel = {
   key: string;
@@ -23,6 +24,7 @@ type FormModel = {
   supportsStartFrame: boolean;
   requiresStartFrame: boolean;
   supportsEndFrame: boolean;
+  maxReferenceImages: number;
   loraCatalog: LoraCatalog;
   defaultLoras: { name: string; strength: number }[];
 };
@@ -49,6 +51,10 @@ export function VideoCreateForm({ models, assets, defaultModel, characters, prom
   const [sampleSolver, setSampleSolver] = useState(reusableModel ? initialRequest?.sampleSolver ?? reusableModel.controls.defaultSolver ?? "" : selected?.controls.defaultSolver ?? "");
   const [scheduler, setScheduler] = useState(reusableModel ? initialRequest?.scheduler ?? reusableModel.controls.defaultScheduler ?? "" : selected?.controls.defaultScheduler ?? "");
   const [reuseSelections, setReuseSelections] = useState(Boolean(reusableModel));
+  const [references, setReferences] = useState<ReferenceSelectionState>(emptyReferenceSelection);
+  const uploadedReferences = useRef(new Map<string, string>());
+  const referenceLimit = selected?.maxReferenceImages ?? 0;
+  const referenceCount = countReferenceSelection(references, characters);
 
   async function upload(file?: File) {
     if (!file) return undefined;
@@ -59,11 +65,44 @@ export function VideoCreateForm({ models, assets, defaultModel, characters, prom
     return result.upload.id as string;
   }
 
+  /** Uploads a picked frame once and keeps the handle, so submitting reuses it. */
+  async function storedUploadId(picked: PickedImage, keep: (next: PickedImage) => void) {
+    if (picked.uploadId || !picked.file) return picked.uploadId;
+    const uploadId = await upload(picked.file);
+    keep({ ...picked, file: undefined, uploadId });
+    return uploadId;
+  }
+
+  async function storedReferenceIds() {
+    return Promise.all(references.files.map(async (reference) => {
+      const cached = uploadedReferences.current.get(reference.id);
+      if (cached) return cached;
+      const uploadId = await uploadReferenceImage(reference.file);
+      uploadedReferences.current.set(reference.id, uploadId);
+      return uploadId;
+    }));
+  }
+
+  async function prepareEnhanceImages() {
+    const startUploadId = selected?.supportsStartFrame ? await storedUploadId(start, setStart) : undefined;
+    const endUploadId = selected?.supportsEndFrame ? await storedUploadId(end, setEnd) : undefined;
+    return {
+      startUploadId,
+      startAssetId: selected?.supportsStartFrame && !startUploadId ? start.assetId : undefined,
+      endUploadId,
+      endAssetId: selected?.supportsEndFrame && !endUploadId ? end.assetId : undefined,
+      referenceUploadIds: referenceLimit ? await storedReferenceIds() : [],
+      referenceAssetIds: referenceLimit ? references.assetIds : [],
+      characterReferenceIds: referenceLimit ? selectedCharacterReferenceIds(references, characters) : [],
+    };
+  }
+
   return <form className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]" onSubmit={async (event) => {
     event.preventDefault(); const form = event.currentTarget; setError(""); setSubmitting(true);
     try {
       const startUploadId = await upload(start.file) ?? start.uploadId;
       const endUploadId = await upload(end.file) ?? end.uploadId;
+      const referenceUploadIds = referenceLimit ? await storedReferenceIds() : [];
       const data = new FormData(form);
       const response = await fetch("/api/jobs/video-create", {
         method: "POST",
@@ -73,6 +112,9 @@ export function VideoCreateForm({ models, assets, defaultModel, characters, prom
           startAssetId: selected?.supportsStartFrame && !startUploadId ? start.assetId : undefined,
           endUploadId: selected?.supportsEndFrame ? endUploadId : undefined,
           endAssetId: selected?.supportsEndFrame && !endUploadId ? end.assetId : undefined,
+          referenceUploadIds,
+          referenceAssetIds: referenceLimit ? references.assetIds : [],
+          characterReferenceIds: referenceLimit ? selectedCharacterReferenceIds(references, characters) : [],
           prompt: data.get("prompt"),
           negativePrompt: selected?.supportsNegativePrompt ? data.get("negativePrompt") : undefined,
           modelKey,
@@ -103,14 +145,15 @@ export function VideoCreateForm({ models, assets, defaultModel, characters, prom
         <ImagePicker label="End image" value={end} onChange={setEnd} assets={assets} disabled={!selected?.supportsEndFrame} />
       </section>
       <section className="border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="video-prompt" className="block text-sm font-bold">Video prompt</label><span className="flex flex-wrap items-center gap-2"><EnhancePromptButton enabled={promptEnhancerEnabled} prompt={prompt} context={{ workflowType: "video-create", modelKey, durationSeconds, hasStartFrame: Boolean(selected?.supportsStartFrame && (start.file ?? start.uploadId ?? start.assetId)), hasEndFrame: Boolean(selected?.supportsEndFrame && (end.file ?? end.uploadId ?? end.assetId)) }} onChange={setPrompt} onError={setError} /><InsertCharacterButton characters={characters} prompt={prompt} textarea={promptRef} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></span></div>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3"><label htmlFor="video-prompt" className="block text-sm font-bold">Video prompt</label><span className="flex flex-wrap items-center gap-2"><EnhancePromptButton enabled={promptEnhancerEnabled} prompt={prompt} context={{ workflowType: "video-create", modelKey, durationSeconds, hasStartFrame: Boolean(selected?.supportsStartFrame && (start.file ?? start.uploadId ?? start.assetId)), hasEndFrame: Boolean(selected?.supportsEndFrame && (end.file ?? end.uploadId ?? end.assetId)), referenceCount: referenceLimit ? referenceCount : 0 }} prepareImages={prepareEnhanceImages} onChange={setPrompt} onError={setError} /><InsertCharacterButton characters={characters} prompt={prompt} textarea={promptRef} onInsert={(value) => { setError(""); setPrompt(value); }} onOverflow={setError} /></span></div>
         <textarea ref={promptRef} id="video-prompt" name="prompt" required rows={7} maxLength={4000} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe motion, camera movement, pacing, and what changes in the scene..." className="w-full rounded-md border border-[#b8beb7] bg-white p-4 leading-7 outline-none focus:border-[var(--teal)]" />
         {selected?.supportsNegativePrompt ? <><label htmlFor="video-negative-prompt" className="mb-2 mt-5 block text-sm font-bold">Negative prompt</label><textarea id="video-negative-prompt" name="negativePrompt" rows={4} maxLength={4000} defaultValue={initialRequest?.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT} className="w-full rounded-md border border-[#b8beb7] bg-white p-4 text-sm leading-6 outline-none focus:border-[var(--teal)]" /></> : null}
         {error && <p role="alert" className="mt-3 text-sm font-semibold text-[var(--accent)]">{error}</p>}
       </section>
+      {referenceLimit > 0 && <ReferenceImagePicker assets={assets} characters={characters} selection={references} onChange={setReferences} limit={referenceLimit} description="People, objects, or styles the model should carry into the clip. They are not keyframes — describe what each one contributes in the prompt." />}
     </div>
     <aside className="space-y-5 border border-[var(--line)] bg-[var(--surface)] p-5">
-      <Control label="Video model"><select value={modelKey} onChange={(event) => { const next = models.find((model) => model.key === event.target.value); setModelKey(event.target.value); if (!next?.supportsStartFrame) setStart({}); if (!next?.supportsEndFrame) setEnd({}); setSourceStrength(next?.defaultSourceStrength ?? 0.85); setDurationSeconds(next?.controls.duration?.defaultValue ?? 15); setFps(next?.controls.fps?.defaultValue ?? 24); setSteps(next?.controls.steps.defaultValue ?? 8); setGuidanceScale(next?.controls.guidance?.defaultValue); setSampleSolver(next?.controls.defaultSolver ?? ""); setScheduler(next?.controls.defaultScheduler ?? ""); setReuseSelections(false); }} className="control"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available"}>{model.displayName}</option>)}</select></Control>
+      <Control label="Video model"><select value={modelKey} onChange={(event) => { const next = models.find((model) => model.key === event.target.value); setModelKey(event.target.value); if (!next?.supportsStartFrame) setStart({}); if (!next?.supportsEndFrame) setEnd({}); if (!next?.maxReferenceImages) setReferences(emptyReferenceSelection); setSourceStrength(next?.defaultSourceStrength ?? 0.85); setDurationSeconds(next?.controls.duration?.defaultValue ?? 15); setFps(next?.controls.fps?.defaultValue ?? 24); setSteps(next?.controls.steps.defaultValue ?? 8); setGuidanceScale(next?.controls.guidance?.defaultValue); setSampleSolver(next?.controls.defaultSolver ?? ""); setScheduler(next?.controls.defaultScheduler ?? ""); setReuseSelections(false); }} className="control"><option value="" disabled>No model available</option>{models.map((model) => <option key={model.key} value={model.key} disabled={model.availability !== "available"}>{model.displayName}</option>)}</select></Control>
       <Control label="Duration"><input className="control" name="duration" type="number" min={selected?.controls.duration?.min ?? 1} max={selected?.controls.duration?.max ?? 20} step={selected?.controls.duration?.step ?? 1} value={durationSeconds} onChange={(event) => setDurationSeconds(Number(event.target.value))} required /></Control>
       <Control label="Resolution"><select key={`resolution-${modelKey}`} name="resolution" defaultValue={reuseSelections ? initialRequest?.resolution ?? selected?.controls.defaultResolution : selected?.controls.defaultResolution} className="control">{(selected?.controls.resolutions ?? [{ label: "1280x720", value: "1280x720" }]).map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></Control>
       {selected?.supportsSourceStrength && selected.supportsStartFrame ? <label className="block"><span className="mb-2 flex items-center justify-between gap-3 text-sm font-bold"><span>Start image / source strength</span><output htmlFor="source-strength">{sourceStrength.toFixed(2)}</output></span><input id="source-strength" aria-label="Start image / source strength" className="w-full accent-[var(--teal)]" name="sourceStrength" type="range" min="0" max="1" step="0.05" value={sourceStrength} onChange={(event) => setSourceStrength(Number(event.target.value))} /></label> : null}

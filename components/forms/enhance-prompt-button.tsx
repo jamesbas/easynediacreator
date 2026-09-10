@@ -14,6 +14,19 @@ export type EnhanceContext = {
   referenceCount?: number;
 };
 
+/** Handles for the pictures the render will get, resolved server-side. */
+export type EnhanceImageSelection = {
+  startUploadId?: string;
+  startAssetId?: string;
+  endUploadId?: string;
+  endAssetId?: string;
+  sourceUploadId?: string;
+  sourceAssetId?: string;
+  referenceUploadIds?: string[];
+  referenceAssetIds?: string[];
+  characterReferenceIds?: string[];
+};
+
 /**
  * Rewrites the prompt through the language model running in LM Studio, in the
  * terms of the checkpoint that will render it.
@@ -21,8 +34,11 @@ export type EnhanceContext = {
  * The rewrite replaces the prompt in place because that is what gets submitted,
  * and the original is kept so one click puts it back — a rewrite is a
  * suggestion, and an enhancement you cannot undo is a prompt you have lost.
+ *
+ * `prepareImages` belongs to the form because only the form knows which of its
+ * pictures are still unsent files; it uploads those and returns the handles.
  */
-export function EnhancePromptButton({ enabled, prompt, context, disabled, onChange, onError }: { enabled: boolean; prompt: string; context: EnhanceContext; disabled?: boolean; onChange: (value: string) => void; onError: (message: string) => void }) {
+export function EnhancePromptButton({ enabled, prompt, context, prepareImages, disabled, onChange, onError }: { enabled: boolean; prompt: string; context: EnhanceContext; prepareImages?: () => Promise<EnhanceImageSelection>; disabled?: boolean; onChange: (value: string) => void; onError: (message: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [original, setOriginal] = useState<string>();
   const className = "inline-flex min-h-10 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-xs font-bold hover:border-[var(--teal)] disabled:opacity-50";
@@ -34,10 +50,12 @@ export function EnhancePromptButton({ enabled, prompt, context, disabled, onChan
     setBusy(true);
     onError("");
     try {
+      // A picture that will not upload is not worth losing the rewrite over.
+      const images = await prepareImages?.().catch(() => ({})) ?? {};
       const response = await fetch("/api/prompt/enhance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...context, prompt: before }),
+        body: JSON.stringify({ ...context, ...images, prompt: before }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "The prompt could not be enhanced.");

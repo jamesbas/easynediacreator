@@ -1,4 +1,5 @@
 import { hasNativeAudio, supportsNegativePrompt, type PromptFamily } from "./family";
+import { ref2vaPictureRoles } from "./h3-prompt";
 
 /**
  * Per-family prompt rules, taken from each developer's own published guidance.
@@ -30,7 +31,20 @@ function actionBeats(segmentSeconds: number) {
   return beats === 1 ? "one beat" : `${beats} beats`;
 }
 
-export function videoPromptDirective(family: PromptFamily, durationSeconds: number) {
+export type VideoPromptContext = { hasStartFrame?: boolean; hasEndFrame?: boolean; referenceCount?: number };
+
+/** Shared by both H3 variants: camera vocabulary, length, and the three audio layers. */
+function h3CommonRules(durationSeconds: number) {
+  return (
+    "Write the camera as a single move inside the action, in MiniMax's own terms — push in, pull out, zoom in, zoom out, pan left or right, truck left or right, tilt up or down, pedestal up or down, arc shot, tracking shot, static shot — qualified only where it is not ordinary: \"with small amplitude\" or \"with large amplitude\", \"at slow speed\" or \"at fast speed\". A locked camera holds a static shot, and say so rather than leaving it unsaid. " +
+    "This model has no negative prompt, so anything that must stay out of the clip has to be written as the thing to show in its place. " +
+    "H3 writes the soundtrack from this same prompt and keeps three layers apart. Ambience and physical sound — weather, traffic, footsteps, fabric, impacts, breathing — are the scene's continuous soundscape and should be tied to things visibly happening. Score that only the audience can hear is described by its instrumentation, tempo and how it builds or fades, never by the mood it is meant to produce, which the model cannot render. Speech is the third: name who speaks and establish them once — age, whether they are on or off screen, pitch and pace — and keep the delivery outside the quotation marks with only the spoken words inside, word for word. Keep speaker ids such as (S1) stable throughout. " +
+    `About ${Math.round(durationSeconds * 2)} words of speech fill ${durationSeconds} seconds at a natural pace. ` +
+    "Keep the ambience and the score out of the timeline and return them in their own fields; keep the spoken lines in the timeline itself."
+  );
+}
+
+export function videoPromptDirective(family: PromptFamily, durationSeconds: number, context: VideoPromptContext = {}) {
   const nativeAudio = hasNativeAudio(family);
   switch (family) {
     case "wan":
@@ -46,20 +60,25 @@ export function videoPromptDirective(family: PromptFamily, durationSeconds: numb
           : "")
       );
     case "minimax":
+      return (
+        "This clip renders on MiniMax H3 FL2VA, its first-and-last-frame mode: any supplied keyframes are pinned to the opening and closing moments and the model generates the path between them. Describe that path, not the endpoints — write the opening state, then the visible changes in the order they happen, then how the differences narrow until the closing frame is reached. " +
+        "Keep it to one continuous shot with no cuts, which is what FL2VA interpolates best; only a change of place, time or subject that the request genuinely needs justifies a second shot. " +
+        "Open by naming the visual style and the framing, then give one thing that happens and at most one smaller movement alongside it, each qualified with its pace. " +
+        h3CommonRules(durationSeconds) + " " +
+        "Write it long and specific — MiniMax ask for roughly 350 to 500 words, and H3 is built to consume that much. Fill it by describing more closely, never by adding more events: the opening composition and framing, how the subject looks and where it sits in the frame, the setting and its light, each stage the one action passes through and what changes as it does, the camera, and the sound of whatever is visibly happening. Describe what is seen rather than summarising what occurs."
+      );
     case "minimax_ref2va":
       return (
-        (family === "minimax_ref2va"
-          ? "This clip renders on MiniMax H3 in reference mode. Every image is handed to the model as an undifferentiated reference, so the model knows what a picture is only because the prose says so. Name each supplied picture in the order it is attached — <Picture 1>, <Picture 2> — and say what each one is and what matching it would look like. "
-          : "This clip renders on MiniMax H3 in first-and-last-frame mode: any supplied keyframes are pinned to the opening and closing moments and the model generates the path between them. Describe that path, not the endpoints — write the opening state, then the visible changes in the order they happen, then how the differences narrow until the closing frame is reached. ") +
-        "Keep it to one continuous shot with no cuts. Open by naming the visual style and the framing, then give one thing that happens and at most one smaller movement alongside it, each qualified with its pace. " +
-        "Write the camera as a single move inside the action, in MiniMax's own terms — push in, pull out, zoom in, zoom out, pan left or right, truck left or right, tilt up or down, pedestal up or down, arc shot, tracking shot, static shot — qualified only where it is not ordinary: \"with small amplitude\" or \"with large amplitude\", \"at slow speed\" or \"at fast speed\". A locked camera holds a static shot, and say so rather than leaving it unsaid. " +
-        "This model has no negative prompt, so anything that must stay out of the clip has to be written as the thing to show in its place. " +
-        "Write it long and specific — MiniMax ask for roughly 350 to 500 words, and H3 is built to consume that much. Fill it by describing more closely, never by adding more events: the opening composition and framing, how the subject looks and where it sits in the frame, the setting and its light, each stage the one action passes through and what changes as it does, the camera, and the sound of whatever is visibly happening. Describe what is seen rather than summarising what occurs." +
-        (nativeAudio
-          ? " H3 writes the soundtrack from this same prompt and keeps three layers apart. Ambience and physical sound — weather, traffic, footsteps, fabric, impacts, breathing — are the scene's continuous soundscape and should be tied to things visibly happening. Score that only the audience can hear is described by its instrumentation, tempo and how it builds or fades, never by the mood it is meant to produce, which the model cannot render. Speech is the third: name who speaks and establish them once — age, whether they are on or off screen, pitch and pace — and keep the delivery outside the quotation marks with only the spoken words inside, word for word. " +
-            `About ${Math.round(durationSeconds * 2)} words of speech fill ${durationSeconds} seconds at a natural pace. ` +
-            "Keep the ambience and the score out of the timeline and return them in their own fields; keep the spoken lines in the timeline itself."
-          : "")
+        "This clip renders on MiniMax H3 Ref2VA, its full-reference mode. Ref2VA does not take the FL2VA timeline: it takes six sections, and every supplied asset has to be declared before the timeline can use it. " +
+        (context.referenceCount || context.hasStartFrame || context.hasEndFrame
+          ? `The pictures are numbered in the order Ref2VA receives them. ${ref2vaPictureRoles({ hasStart: Boolean(context.hasStartFrame), hasEnd: Boolean(context.hasEndFrame), referenceCount: context.referenceCount ?? 0, durationSeconds }).join(" ")} Never invent a picture, subject, video or audio asset that is not in that list, and never describe a face or a garment you were not shown — the photograph carries the likeness and a written face competes with it. `
+          : "No reference asset is attached, so declare no <Picture>, <Subject>, <Video> or <Audio> labels and write the request as a plain new generation. ") +
+        "\"subjects\" holds one definition per line, each naming a <Subject N> and the picture it comes from together with the traits to keep — identity, hair, wardrobe, distinctive objects. " +
+        "\"summary\" is one or two sentences that open with the bracketed task types, normally [reference generation], and say what the new video does with the references. " +
+        "\"retention\" holds one line per declared label in the form `<Subject 1> (appears in [Shot 1]): fully_preserved - ...`, choosing fully_preserved, partially_preserved, attribute_transfer or weak_reference for anything visible and fully_copy, partially_copy, reference or weak_reference for audio, and saying plainly what is kept and what is new. A newly requested action is not a loss of fidelity. " +
+        "\"prompt\" is the detailed_description: open by naming the overall visual treatment, then begin [Shot 1] with no timestamp. State a subject's label, visible traits, position and action at its first appearance and reuse the bare label afterwards. A later hard cut opens `[Shot N] At MM:SS.mmm, ...` at a strictly increasing time inside the clip, and is worth making only when it adds a new subject, place, state, viewpoint or time; keep identity, wardrobe, props, geography, lighting and causality consistent across it. " +
+        h3CommonRules(durationSeconds) + " " +
+        "MiniMax ask for roughly 350 to 500 words in the detailed_description. Fill it by describing more closely, never by adding events the request did not ask for."
       );
     default:
       return "";

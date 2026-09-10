@@ -228,6 +228,8 @@ test("submits text-to-video with another discovered model", async ({ page }) => 
   await page.getByLabel("Video model").selectOption("minimax_video_fixture");
   await expect(page.getByRole("group", { name: "Start image" })).toHaveAttribute("disabled", "");
   await expect(page.getByRole("slider", { name: "Start image / source strength" })).toHaveCount(0);
+  // This checkpoint publishes a reference selector; LTX does not.
+  await expect(page.getByRole("heading", { name: "Reference images" })).toBeVisible();
   await page.getByLabel("Video prompt").fill("Clouds rolling over a mountain ridge");
   await expect(page.getByRole("button", { name: "Generate video" })).toBeEnabled();
   await page.getByRole("button", { name: "Generate video" }).click();
@@ -235,6 +237,9 @@ test("submits text-to-video with another discovered model", async ({ page }) => 
   expect(submitted).toMatchObject({ modelKey: "minimax_video_fixture", prompt: "Clouds rolling over a mountain ridge" });
   expect(submitted).not.toHaveProperty("startUploadId");
   expect(submitted).not.toHaveProperty("startAssetId");
+
+  await page.getByLabel("Video model").selectOption("ltx2_fixture");
+  await expect(page.getByRole("heading", { name: "Reference images" })).toHaveCount(0);
 });
 
 test("cancels an active generation", async ({ page }) => {

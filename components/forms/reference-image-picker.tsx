@@ -34,12 +34,13 @@ export async function uploadReferenceImage(file: File) {
  * and previous outputs. WanGP weights the earlier entries of `image_refs` more
  * heavily, which is why the character toggles sit first.
  */
-export function ReferenceImagePicker({ assets, characters, selection, onChange, limit, disabledReason }: {
+export function ReferenceImagePicker({ assets, characters, selection, onChange, limit, description, disabledReason }: {
   assets: ReferenceAssetOption[];
   characters: CharacterSummary[];
   selection: ReferenceSelectionState;
   onChange: (next: ReferenceSelectionState) => void;
   limit: number;
+  description?: string;
   disabledReason?: string;
 }) {
   const previewUrls = useRef(new Set<string>());
@@ -82,7 +83,7 @@ export function ReferenceImagePicker({ assets, characters, selection, onChange, 
     <div className="flex items-start justify-between gap-4">
       <div>
         <h2 className="text-sm font-bold">Reference images</h2>
-        <p className="mt-1 text-xs leading-5 text-[var(--muted)]">People or objects the model should carry into the new image.</p>
+        <p className="mt-1 text-xs leading-5 text-[var(--muted)]">{description ?? "People or objects the model should carry into the new image."}</p>
       </div>
       <span className="shrink-0 text-xs font-bold text-[var(--muted)]">{count}/{limit}</span>
     </div>

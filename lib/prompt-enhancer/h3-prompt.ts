@@ -1,13 +1,16 @@
 import type { PromptFamily } from "./family";
 
 /**
- * MiniMax H3's native prompt envelope.
+ * MiniMax H3's native prompt envelopes.
  *
- * H3 does not take one blob of prose. Its published guide
- * (VIDEO_PROMPT_WRITING_GUIDE_base_en) specifies an optional alignment
- * instruction followed by three labelled fields: the timeline, the ambience,
- * and the audience-only score. WanGP passes `prompt` through untouched, so
- * nothing between this app and the model produces that shape if we do not.
+ * H3 does not take one blob of prose, and its two variants do not take the same
+ * envelope. FL2VA's guide (VIDEO_PROMPT_WRITING_GUIDE_base_en) specifies an
+ * optional alignment instruction followed by three labelled fields: the
+ * timeline, the ambience, and the audience-only score. Ref2VA's guide
+ * (VIDEO_PROMPT_WRITING_GUIDE_ref_en) specifies six sections, because it must
+ * declare what every supplied asset is before it can say what the video does
+ * with it. WanGP passes `prompt` through untouched, so nothing between this app
+ * and the model produces either shape if we do not.
  *
  * Fields are written on their own lines because that is how they read in the
  * prompt box. `normalizeWanGpPrompt` folds them onto one line on the way to
@@ -32,6 +35,11 @@ function seconds(value: number) {
 
 function tidy(value: string | undefined) {
   return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+/** Tidies a list-shaped field without collapsing the one-entry-per-line layout. */
+function tidyLines(value: string | undefined) {
+  return (value ?? "").split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean).join("\n");
 }
 
 /**
@@ -119,39 +127,143 @@ export function renderH3Prompt(parts: H3PromptParts) {
   return [header, ...fields].filter(Boolean).join("\n");
 }
 
-/** Whether a prompt has already been put in the envelope. */
-export function isH3Prompt(prompt: string) {
-  return prompt.includes("integrated_multimodal_description:");
+/**
+ * Ref2VA's own envelope, which is a different and larger thing.
+ *
+ * Its guide (VIDEO_PROMPT_WRITING_GUIDE_ref_en) specifies six labelled
+ * sections in a fixed order, because a reference prompt has to say what each
+ * supplied asset is before it can say what the video does with it. WanGP's
+ * own Ref2VA writing rules require exactly these sections in this order, and
+ * omit the ones with nothing to declare — its stock Ref2VA prompt ships with
+ * `summary`, `detailed_description` and `overall_soundscape` alone.
+ */
+export type Ref2vaPromptParts = {
+  /** One `<Subject N>` or `<Picture N>` definition per line. */
+  subjects?: string;
+  /** Opens with the bracketed task types, e.g. `[reference generation]`. */
+  summary?: string;
+  /** One retention line per declared label. */
+  retention?: string;
+  /** The `detailed_description` timeline, without the `[Shot 1]` marker. */
+  body: string;
+  soundscape?: string;
+  score?: string;
+};
+
+export function renderRef2vaPrompt(parts: Ref2vaPromptParts) {
+  const subjects = tidyLines(parts.subjects);
+  const retention = tidyLines(parts.retention);
+  const written = tidyLines(parts.summary);
+  // The guide opens the summary with its bracketed task types; a rewrite that
+  // forgets them is missing the first thing Ref2VA reads.
+  const summary = written && !written.startsWith("[") ? `[reference generation] ${written}` : written;
+  const timeline = `${SHOT} ${markDialogue(tidyLines(parts.body)).replace(/^\[Shot 1\]\s*/, "")}`;
+  return [
+    subjects && `subject_definitions:\n${subjects}`,
+    summary && `summary:\n${summary}`,
+    retention && `retention_analysis:\n${retention}`,
+    `detailed_description:\n${timeline}`,
+    `overall_soundscape: ${tidy(parts.soundscape) || "N/A"}`,
+    `non_diegetic_music: ${tidy(parts.score) || "N/A"}`,
+  ].filter(Boolean).join("\n");
+}
+
+type Ref2vaPictures = { hasStart: boolean; hasEnd: boolean; referenceCount: number; durationSeconds: number };
+
+/**
+ * How Ref2VA numbers the images it is handed.
+ *
+ * WanGP shows the start and end images to the prompt before the general
+ * reference images: with a start image and one reference image, the start
+ * image is `<Picture 1>` and the reference image is `<Picture 2>`. A keyframe
+ * earns its own entry; a plain reference does not, and is declared as a
+ * `<Subject N>` taken from its picture instead.
+ */
+export function ref2vaPictureRoles({ hasStart, hasEnd, referenceCount, durationSeconds }: Ref2vaPictures) {
+  const roles: string[] = [];
+  if (hasStart) roles.push(`<Picture ${roles.length + 1}> is the start image, a concrete keyframe that is the first frame of [Shot 1] at 0.00 seconds; give it its own entry in subject_definitions and retention_analysis.`);
+  if (hasEnd) roles.push(`<Picture ${roles.length + 1}> is the end image, a concrete keyframe aligned with the ${seconds(durationSeconds)}-second mark; give it its own entry in subject_definitions and retention_analysis.`);
+  for (let index = 0; index < referenceCount; index += 1) {
+    roles.push(`<Picture ${roles.length + 1}> is a general reference image and not a keyframe: declare what it contributes as a <Subject N> taken from it, and never align it to a time.`);
+  }
+  return roles;
 }
 
 /**
- * Recover the plain timeline prose from an envelope.
+ * The declarations the attached images require, written from what is known.
+ *
+ * A local model handed six sections will sometimes return four, and an envelope
+ * that names `<Subject 1>` in its timeline without ever defining it is worse
+ * than one that never mentions it. These lines are deliberately plain: they say
+ * only what the attachment itself proves, so they can stand in unedited when
+ * the rewrite leaves a section empty.
+ */
+export function ref2vaFallbackDeclarations({ hasStart, hasEnd, referenceCount, durationSeconds }: Ref2vaPictures) {
+  const subjects: string[] = [];
+  const retention: string[] = [];
+  let picture = 0;
+  if (hasStart) {
+    picture += 1;
+    subjects.push(`<Picture ${picture}> is the start image, the first frame of [Shot 1] at 0.00 seconds.`);
+    retention.push(`<Picture ${picture}> (appears in [Shot 1]): fully_preserved - the composition, subjects, wardrobe and lighting it shows open the clip unchanged.`);
+  }
+  if (hasEnd) {
+    picture += 1;
+    subjects.push(`<Picture ${picture}> is the end image, the frame the clip reaches at the ${seconds(durationSeconds)}-second mark.`);
+    retention.push(`<Picture ${picture}> (appears in [Shot 1]): fully_preserved - the composition, subjects, wardrobe and lighting it shows close the clip unchanged.`);
+  }
+  for (let subject = 1; subject <= referenceCount; subject += 1) {
+    picture += 1;
+    subjects.push(`<Subject ${subject}> is the person or object shown in <Picture ${picture}>, preserving its identity, face, hair, clothing and distinctive objects exactly as photographed.`);
+    retention.push(`<Subject ${subject}> (appears in [Shot 1]): fully_preserved - appearance and identity are carried over from <Picture ${picture}>; the setting, action and camera are new.`);
+  }
+  return { subjects: subjects.join("\n"), retention: retention.join("\n") };
+}
+
+const H3_LABELS = ["subject_definitions", "summary", "retention_analysis", "detailed_description", "integrated_multimodal_description", "overall_soundscape", "non_diegetic_music"] as const;
+const H3_LABEL_PATTERN = new RegExp(`(?:^|\\s)(${H3_LABELS.join("|")}):`, "g");
+
+/** Whether a prompt has already been put in either envelope. */
+export function isH3Prompt(prompt: string) {
+  return prompt.includes("integrated_multimodal_description:") || prompt.includes("detailed_description:");
+}
+
+function h3Sections(prompt: string) {
+  const sections = new Map<string, string>();
+  const labels = [...prompt.matchAll(H3_LABEL_PATTERN)];
+  labels.forEach((label, index) => {
+    const start = (label.index ?? 0) + label[0].length;
+    sections.set(label[1], prompt.slice(start, labels[index + 1]?.index ?? prompt.length));
+  });
+  return sections;
+}
+
+/**
+ * Recover the plain timeline prose from either envelope.
  *
  * Re-enhancing an enveloped prompt has to hand the model prose, not labels, or
  * the rewrite is a rewrite of the format. The two audio layers are still
- * direction, so they are folded back into the prose rather than dropped.
- * Reads either layout, so a prompt flattened on its way to Wan2GP and pasted
- * back still strips cleanly.
+ * direction, so they are folded back into the prose rather than dropped; the
+ * reference bookkeeping is not, because it is rebuilt from the images actually
+ * attached. Reads either layout, so a prompt flattened on its way to Wan2GP and
+ * pasted back still strips cleanly.
  */
 export function stripH3Envelope(prompt: string) {
   if (!isH3Prompt(prompt)) return stripDialogueMarkup(prompt);
-  const after = prompt.slice(prompt.indexOf("integrated_multimodal_description:"));
-  const timeline = after.replace(/^integrated_multimodal_description:\s*/, "").split(/\s*(?:overall_soundscape|non_diegetic_music):/)[0] ?? "";
-  const sound = /overall_soundscape:\s*([\s\S]*?)(?=\s*non_diegetic_music:|$)/.exec(prompt);
-  const music = /non_diegetic_music:\s*([\s\S]*)$/.exec(prompt);
-  const audio = [sound?.[1], music?.[1]].map(tidy).filter((value) => value && value !== "N/A");
+  const sections = h3Sections(prompt);
+  const timeline = sections.get("detailed_description") ?? sections.get("integrated_multimodal_description") ?? "";
+  const audio = [sections.get("overall_soundscape"), sections.get("non_diegetic_music")].map(tidy).filter((value) => value && value !== "N/A");
   return [tidy(timeline).replace(/^\[Shot 1\]\s*/, ""), ...audio].map(stripDialogueMarkup).join(" ").trim();
 }
 
-/**
- * Only FL2VA and its one-ended relatives take this envelope.
- *
- * Ref2VA's own format is a different, larger thing — it has to say what every
- * undifferentiated `<Picture N>` means — so it is given the reference-mode
- * writing directive and plain prose rather than a format it half-fits.
- */
+/** FL2VA and its one-ended relatives take the three-field envelope. */
 export function usesH3PromptFormat(family: PromptFamily) {
   return family === "minimax";
+}
+
+/** Ref2VA takes the six-section reference envelope instead. */
+export function usesRef2vaPromptFormat(family: PromptFamily) {
+  return family === "minimax_ref2va";
 }
 
 /**

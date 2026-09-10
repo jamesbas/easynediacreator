@@ -7,8 +7,10 @@ import { buildVideoSettings } from "@/lib/wan-gp/adapters/video";
 import { getGenerationControls, validateGenerationControls } from "@/lib/wan-gp/generation-controls";
 import { summarizeGenerationSettings } from "@/lib/wan-gp/generation-summary";
 import { getVideoFallbackResolutions } from "@/lib/wan-gp/video-presets";
+import { assertReferenceImagesAllowed } from "@/lib/wan-gp/reference-images";
 import { enqueueJob } from "./job-runner";
 import { applyLoraAccelerationPreset, resolveLoraPreset, validateModelLoras } from "./lora-service";
+import { resolveReferenceImagePaths } from "./reference-images";
 
 function imagePath(uploadId?: string, assetId?: string) {
   if (uploadId) return getUpload(uploadId)?.path;
@@ -27,12 +29,14 @@ export async function createVideo(request: VideoCreateRequest) {
   if (startPath && !model.capabilities.includes("start-frame")) throw new Error("Start images are not supported by the selected video model.");
   if (!startPath && !model.capabilities.includes("text-to-video")) throw new Error("The selected video model requires a start image.");
   if (endPath && !model.capabilities.includes("end-frame")) throw new Error("End images are not supported by the selected video model.");
+  const referencePaths = await resolveReferenceImagePaths(request);
+  assertReferenceImagesAllowed(model, referencePaths.length);
   const normalizedRequest = { ...request, loras: validateModelLoras(request.loras, model.loraCatalog) };
   const defaultResolution = typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1280x720";
   const controls = getGenerationControls(model.schema, model.defaults, { workflow: "video", fallbackResolutions: getVideoFallbackResolutions(model.key, defaultResolution), fallbackResolution: defaultResolution });
   validateGenerationControls(normalizedRequest, controls);
   const preset = resolveLoraPreset(request.loraPresetId, normalizedRequest.loras, model.loraCatalog, model.modelType, "video-create");
-  const settings = buildVideoSettings(normalizedRequest, model.defaults, model.schema, model.modelType, startPath, endPath);
+  const settings = buildVideoSettings(normalizedRequest, model.defaults, model.schema, model.modelType, startPath, endPath, referencePaths);
   applyLoraAccelerationPreset(settings, preset, normalizedRequest.loras);
   const job = createJob({ workflowType: "video-create", modelKey: request.modelKey, prompt: request.prompt, requestSnapshot: { workflowType: "video-create", request: normalizedRequest }, summary: summarizeGenerationSettings(model.displayName, settings) });
   enqueueJob({ jobId: job.id, modelType: model.modelType, settings });
