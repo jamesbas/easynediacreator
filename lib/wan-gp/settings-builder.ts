@@ -59,15 +59,65 @@ export function applyLoraSettings(target: Record<string, unknown>, schema: Recor
   setDiscoveredSetting(target, schema, defaults, modelType, ["loras_multipliers"], loras.map((lora) => `${lora.strength}`).join(" "), required);
 }
 
-export function durationToFrameCount(durationSeconds: number, fps: number) {
-  return Math.ceil(durationSeconds * fps / 8) * 8 + 1;
+/**
+ * The frame counts a checkpoint accepts: `frames_minimum + k * frames_steps`.
+ *
+ * WanGP publishes both per model — LTX-2 is 17/8, MiniMax H3 is 107/17 — and
+ * rounds anything off the grid to the nearest legal value. The fallback
+ * reproduces the `8k + 1` grid this used to assume for every family.
+ */
+function frameGrid(schema: Record<string, unknown>) {
+  const modelDefinition = schema.model_def && typeof schema.model_def === "object" && !Array.isArray(schema.model_def) ? schema.model_def as Record<string, unknown> : {};
+  const minimum = Number(modelDefinition.frames_minimum);
+  const step = Number(modelDefinition.frames_steps);
+  return { minimum: Number.isFinite(minimum) && minimum > 0 ? minimum : 1, step: Number.isFinite(step) && step > 0 ? step : 8 };
+}
+
+/** The nearest legal length, resolving a tie downwards exactly as WanGP does. */
+export function alignFrameCount(requestedFrames: number, minimum: number, step: number) {
+  if (requestedFrames <= minimum) return minimum;
+  const lower = minimum + Math.floor((requestedFrames - minimum) / step) * step;
+  const upper = lower + step;
+  return requestedFrames - lower <= upper - requestedFrames ? lower : upper;
+}
+
+export function durationToFrameCount(durationSeconds: number, fps: number, grid = { minimum: 1, step: 8 }) {
+  return alignFrameCount(Math.round(durationSeconds * fps), grid.minimum, grid.step);
+}
+
+/**
+ * The largest single window a family will generate, in frames.
+ *
+ * WanGP reports `frames_maximum`, but that is the *stored default* window size
+ * rather than the ceiling — 362 for MiniMax H3, whose slider now goes to 481.
+ * The real maximum is published nowhere on the MCP surface, so it is held here.
+ */
+const WINDOW_CEILINGS: { pattern: RegExp; frames: number }[] = [{ pattern: /^minimax/, frames: 481 }];
+
+/**
+ * Keep a clip in one generation window wherever the model can manage it.
+ *
+ * Past `sliding_window_size` WanGP splits the render into windows, and H3
+ * restarts its prompt timeline at `[Shot 1]` in each one — so a single prompt
+ * spread over two windows renders as two restarted clips rather than one. The
+ * window is only ever raised: lowering it would override a deliberate choice
+ * made in WanGP itself.
+ */
+export function applySlidingWindow(target: Record<string, unknown>, schema: Record<string, unknown>, defaults: Record<string, unknown>, modelType: string, frameCount: number) {
+  const current = Number(defaults.sliding_window_size);
+  if (!Number.isFinite(current) || current <= 0) return;
+  const ceiling = Math.max(current, WINDOW_CEILINGS.find(({ pattern }) => pattern.test(modelType.toLowerCase()))?.frames ?? current);
+  const window = Math.min(Math.max(frameCount, current), ceiling);
+  if (window !== current) setDiscoveredSetting(target, schema, defaults, modelType, ["sliding_window_size"], window);
 }
 
 export function applyVideoDuration(target: Record<string, unknown>, schema: Record<string, unknown>, defaults: Record<string, unknown>, modelType: string, durationSeconds: number | undefined, fps: number) {
   if (durationSeconds === undefined) return;
   if (modelType.toLowerCase().startsWith("ltx2") || hasDiscoveredSetting(schema, defaults, ["video_length", "num_frames", "frame_num"])) {
-    setDiscoveredSetting(target, schema, defaults, modelType, ["video_length", "num_frames", "frame_num"], durationToFrameCount(durationSeconds, fps), true);
+    const frames = durationToFrameCount(durationSeconds, fps, frameGrid(schema));
+    setDiscoveredSetting(target, schema, defaults, modelType, ["video_length", "num_frames", "frame_num"], frames, true);
     setDiscoveredSetting(target, schema, defaults, modelType, ["duration_seconds"], 0);
+    applySlidingWindow(target, schema, defaults, modelType, frames);
     return;
   }
   setDiscoveredSetting(target, schema, defaults, modelType, ["duration_seconds"], durationSeconds, true);

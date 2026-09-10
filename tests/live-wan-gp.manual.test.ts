@@ -80,8 +80,20 @@ describe.runIf(runLive)("live WanGP MCP", () => {
     expect(settings).not.toHaveProperty("duration_seconds");
   });
 
-  it("builds Qwen image-edit settings with a source reference", async () => {
-    const model = (await discoverModels(client, DEFAULT_MODEL_SELECTIONS)).find((candidate) => candidate.workflowType === "image-edit" && candidate.key === "qwen-image-edit");
+  it("widens the H3 sliding window to the 481 frames the model accepts", async () => {
+    const model = (await discoverModels(client, DEFAULT_MODEL_SELECTIONS)).find((candidate) => candidate.workflowType === "video-create" && candidate.modelType?.includes("minimax_h3"));
+    expect(model?.modelType).toBeTruthy();
+    // WanGP ships 362 as the stored window and reports it as `frames_maximum`.
+    expect(model!.defaults.sliding_window_size).toBe(362);
+
+    const settings = buildVideoSettings(
+      { prompt: "A keeper crosses the gantry", negativePrompt: "", modelKey: model!.key, durationSeconds: 20, sourceStrength: 0.85, steps: 8, loras: [], advanced: {} },
+      model!.defaults, model!.schema, model!.modelType!,
+    );
+    expect(settings).toMatchObject({ video_length: 481, sliding_window_size: 481 });
+  });
+
+  it("builds Qwen image-edit settings with a source reference", async () => {    const model = (await discoverModels(client, DEFAULT_MODEL_SELECTIONS)).find((candidate) => candidate.workflowType === "image-edit" && candidate.key === "qwen-image-edit");
     expect(model?.modelType).toBeTruthy();
     const sourcePath = "C:\\input\\source.png";
     const settings = buildQwenImageEditSettings(
