@@ -16,6 +16,10 @@ const envSchema = z.object({
   WANGP_PROFILES_ROOT: optionalPath,
   WANGP_LORA_METADATA_ROOT: optionalPath,
   WANGP_LORA_CLASSIFIER_OVERRIDES: optionalPath,
+  /** MCP API v2 dropped model availability, so installed weights are read from WanGP's `ckpts` folder. */
+  WANGP_CKPTS_ROOT: optionalPath,
+  /** A synchronous MCP generation holds the call open for the whole render. */
+  WANGP_GENERATION_TIMEOUT_MS: z.coerce.number().int().min(60_000).max(86_400_000).default(3_600_000),
   WANGP_DISCOVERY_CACHE_MINUTES: z.coerce.number().int().min(1).default(30),
   WANGP_CLIENT_MODE: z.enum(["fake", "live"]).default("fake"),
   ENABLED_IMAGE_CREATE_MODELS: z.string().default("qwen-image,flux-klein-9b,krea-2"),
@@ -58,6 +62,7 @@ export const config = Object.freeze({
   ...env,
   WANGP_PROFILES_ROOT: env.WANGP_PROFILES_ROOT ?? (wanGpRoot ? path.join(wanGpRoot, "profiles") : undefined),
   WANGP_LORA_METADATA_ROOT: env.WANGP_LORA_METADATA_ROOT ?? (wanGpRoot ? path.join(wanGpRoot, "loras_metadata") : undefined),
+  WANGP_CKPTS_ROOT: env.WANGP_CKPTS_ROOT ?? (wanGpRoot ? path.join(wanGpRoot, "ckpts") : undefined),
   WANGP_LORA_CLASSIFIER_OVERRIDES: env.WANGP_LORA_CLASSIFIER_OVERRIDES ?? path.join(process.cwd(), "data", "lora-classifier-overrides.json"),
   enabledModels: {
     imageCreate: list(env.ENABLED_IMAGE_CREATE_MODELS),

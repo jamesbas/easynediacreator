@@ -23,7 +23,7 @@ describe.runIf(runLive)("live WanGP MCP", () => {
   it("resolves configured application models", async () => {
     const models = await discoverModels(client, DEFAULT_MODEL_SELECTIONS);
     expect(models.find((model) => model.workflowType === "image-edit" && model.key === "qwen-image-edit")?.modelType).toBe("qwen_image_edit_plus2_20B");
-    expect(models.find((model) => model.workflowType === "video-create")?.modelType).toBe("ltx2_22B_distilled_1_1");
+    expect(models.find((model) => model.workflowType === "video-create" && model.modelType === "ltx2_22B_distilled_1_1")).toBeTruthy();
   });
 
   it("discovers and adapts a non-LTX text-to-video model", async () => {
@@ -69,7 +69,7 @@ describe.runIf(runLive)("live WanGP MCP", () => {
   });
 
   it("builds LTX start-image settings with a discovered LoRA", async () => {
-    const model = (await discoverModels(client, DEFAULT_MODEL_SELECTIONS)).find((candidate) => candidate.workflowType === "video-create");
+    const model = (await discoverModels(client, DEFAULT_MODEL_SELECTIONS)).find((candidate) => candidate.workflowType === "video-create" && candidate.modelType === "ltx2_22B_distilled_1_1");
     expect(model?.modelType).toBeTruthy(); expect(model?.loraCatalog.loras.length).toBeGreaterThan(0);
     const lora = model!.loraCatalog.loras[0];
     const settings = buildLtx2VideoSettings(
