@@ -26,13 +26,18 @@ export class FakeWanGpClient implements WanGpClient {
   async listModels(output?: "image" | "video") { return fakeModels.filter((model) => !output || model.output === output); }
   async getModelMetadata(modelType: string) {
     const model = this.requireModel(modelType);
-    const capabilities = model.output !== "video" ? ["text-to-image"] : model.family === "ltx2" ? ["text-to-video", "image-to-video", "start-frame", "end-frame"] : ["text-to-video"];
-    // The MiniMax fixture stands in for H3 Ref2VA, which publishes a reference
-    // selector; FL2VA does not, so the flag alone must never be enough.
-    const references = model.family === "minimax"
-      ? { media_inputs: { image: { reference: true, multiple_references: true } }, setting_values: { video_prompt_type: { image_ref_choices: { choices: [{ label: "Generate without Reference Images", value: "" }, { label: "Use Reference Images", value: "I" }] } } } }
-      : {};
-    return { ...model, ...references, capabilities };
+    // WanGP's own vocabulary, underscored, so the fixtures exercise the same
+    // normalization the live server's names go through.
+    const capabilities = model.output !== "video" ? ["text_to_image"] : model.family === "ltx2" ? ["text_to_video", "image_to_video"] : ["text_to_video"];
+    // Start and end frames are read off `media_inputs`, never off `capabilities`.
+    const mediaInputs = model.family === "ltx2"
+      ? { media_inputs: { image: { start: true, end: true } } }
+      : model.family === "minimax"
+        // The MiniMax fixture stands in for H3 Ref2VA, which publishes a reference
+        // selector; FL2VA does not, so the flag alone must never be enough.
+        ? { media_inputs: { image: { reference: true, multiple_references: true } }, setting_values: { video_prompt_type: { image_ref_choices: { choices: [{ label: "Generate without Reference Images", value: "" }, { label: "Use Reference Images", value: "I" }] } } } }
+        : {};
+    return { ...model, ...mediaInputs, capabilities };
   }
   async getModelAvailability(modelType: string) { this.requireModel(modelType); return { status: "available" as const }; }
   async getDefaultSettings(modelType: string) {

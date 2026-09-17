@@ -23,6 +23,27 @@ describe("model discovery", () => {
     })).toEqual(expect.arrayContaining(["text-to-video", "image-to-video", "start-frame", "end-frame"]));
   });
 
+  it("reads MCP v2's capability array, which names the same things with underscores", () => {
+    // Verbatim from a live `qwen_image_edit_plus2_20B`: v1 sent booleans, v2 an
+    // array. Left underscored, every hyphenated capability check silently failed
+    // and the Edit page lost its "Skip the source image" toggle.
+    const capabilities = getWanGpCapabilities({
+      capabilities: ["text_to_image", "image_to_image", "inpainting", "reference_images", "background_image", "lora"],
+      media_inputs: { image: { reference: true, multiple_references: true, mask: true } },
+    });
+    expect(capabilities).toContain("text-to-image");
+    expect(capabilities).toContain("reference-image");
+    expect(capabilities).not.toContain("text_to_image");
+  });
+
+  it("keeps text-to-video readable on a v2 video model, so a clip needs no start frame", () => {
+    const capabilities = getWanGpCapabilities({
+      capabilities: ["text_to_video", "image_to_video", "sliding_window", "lora", "sliding_window"],
+      media_inputs: { image: { start: true, end: true } },
+    });
+    expect(capabilities).toEqual(expect.arrayContaining(["text-to-video", "image-to-video", "start-frame", "end-frame"]));
+  });
+
   it("recognizes Flux 2 and prefers an available matching model", () => {
     const models = [
       { modelType: "flux2_klein_9b", name: "Flux.2 Klein 9B", family: "flux2", output: "image" as const, inputs: ["text", "image"], availability: "missing" as const },

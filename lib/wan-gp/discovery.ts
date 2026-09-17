@@ -26,11 +26,14 @@ function enabled(rule: LogicalRule) {
 }
 
 export function getWanGpCapabilities(metadata: Record<string, unknown>) {
-  const capabilities = Array.isArray(metadata.capabilities)
+  // MCP v1 sent an object of booleans, v2 sends an array of names; both spell a
+  // capability with underscores, and everything downstream matches hyphens.
+  const declared = Array.isArray(metadata.capabilities)
     ? metadata.capabilities.filter((value): value is string => typeof value === "string")
     : metadata.capabilities && typeof metadata.capabilities === "object"
-      ? Object.entries(metadata.capabilities).filter(([, supported]) => supported === true).map(([name]) => name.replaceAll("_", "-"))
+      ? Object.entries(metadata.capabilities).filter(([, supported]) => supported === true).map(([name]) => name)
       : [];
+  const capabilities = declared.map((name) => name.replaceAll("_", "-"));
   const mediaInputs = metadata.media_inputs;
   const imageInputs = mediaInputs && typeof mediaInputs === "object" && "image" in mediaInputs ? mediaInputs.image : undefined;
   if (imageInputs && typeof imageInputs === "object") {
