@@ -19,12 +19,19 @@ export default async function SettingsPage() {
   let connected = false;
   let version: string | undefined;
   let models = [] as Awaited<ReturnType<typeof getModels>>;
+  let modelDiscoveryError: string | undefined;
   try {
     const status = await getWanGpClient().ping();
     connected = status.connected;
     version = status.version;
-    models = await getModels();
   } catch {}
+  if (connected) {
+    try {
+      models = await getModels();
+    } catch (error) {
+      modelDiscoveryError = error instanceof Error ? error.message : "WanGP model discovery failed.";
+    }
+  }
 
   return (
     <>
@@ -40,6 +47,7 @@ export default async function SettingsPage() {
       <CollapsibleSection title="Characters" meta={`${preferences.characters.length} saved`} description="Save a prompt and reference photographs for each recurring character, then pull them into any generation by name.">
         <CharacterLibrary initialCharacters={characterSummaries(preferences.characters)} />
       </CollapsibleSection>
+      {modelDiscoveryError && <section role="alert" className="mt-8 border-l-4 border-[var(--accent)] bg-[#fbe9e5] p-5"><h2 className="font-bold">Model discovery failed</h2><p className="mt-1 text-sm leading-6 text-[var(--muted)]">{modelDiscoveryError}</p></section>}
       <CollapsibleSection title="Dropdown models" meta={`${models.length} discovered`} description="Select the exact WanGP checkpoints that appear in each creation tab. Newly discovered available checkpoints are shown by default.">
         <ModelVisibilityControl models={models} />
       </CollapsibleSection>

@@ -84,6 +84,43 @@ describe("model discovery", () => {
     expect(models.find((model) => model.workflowType === "video-create")).toMatchObject({ availability: "available", schema: { metadata: expect.any(Object) } });
   });
 
+  it("keeps other checkpoints when one model's detail discovery fails", async () => {
+    class ModelDetailErrorClient extends FakeWanGpClient {
+      override listLoras(modelType: string) {
+        if (modelType === "minimax_video_fixture") return Promise.reject(new Error("Invalid or expired cursor"));
+        return super.listLoras(modelType);
+      }
+    }
+    const models = await discoverModels(new ModelDetailErrorClient());
+
+    expect(models.find((model) => model.modelType === "minimax_video_fixture")).toMatchObject({ availability: "partial", visible: false, reason: "Invalid or expired cursor" });
+    expect(models.find((model) => model.modelType === "ltx2_fixture")).toMatchObject({ availability: "available", visible: true });
+    expect(models.filter((model) => model.availability === "available").length).toBeGreaterThan(0);
+  });
+
+  it("bounds concurrent checkpoint discovery so WanGP is not flooded", async () => {
+    class ConcurrencyClient extends FakeWanGpClient {
+      active = 0;
+      maximum = 0;
+      override async getDefaultSettings(modelType: string) {
+        this.active += 1;
+        this.maximum = Math.max(this.maximum, this.active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        try {
+          return await super.getDefaultSettings(modelType);
+        } finally {
+          this.active -= 1;
+        }
+      }
+    }
+    const client = new ConcurrencyClient();
+
+    await discoverModels(client);
+
+    expect(client.maximum).toBeGreaterThan(1);
+    expect(client.maximum).toBeLessThanOrEqual(4);
+  });
+
   it("honors an available exact model preference", () => {
     const models = [
       { modelType: "ltx2_22B_distilled", name: "LTX-2 Distilled 1.0", family: "ltx2", output: "video" as const, inputs: ["text", "image"], availability: "available" as const },

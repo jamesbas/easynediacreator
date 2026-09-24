@@ -83,4 +83,31 @@ describe("LiveWanGpClient", () => {
     await expect(new LiveWanGpClient("http://wan-gp.test/mcp").getModelSchema("legacy-model"))
       .resolves.toEqual({ metadata: { model_type: "legacy-model" } });
   });
+
+  it("serializes v2 cursor searches so one model cannot invalidate another model's cursor", async () => {
+    mcp.listTools.mockResolvedValue({ tools: [
+      { name: "wangp_models", inputSchema: { type: "object", properties: {} } },
+      { name: "wangp_model", inputSchema: { type: "object", properties: {} } },
+    ] });
+    mcp.callTool.mockImplementation(({ arguments: args }) => {
+      const modelType = String(args.model_type);
+      const cursor = (args.arguments as { cursor?: string }).cursor;
+      return Promise.resolve(result(cursor
+        ? { loras: [`${modelType}-two.safetensors`], has_more: false }
+        : { loras: [`${modelType}-one.safetensors`], has_more: true, next_cursor: `${modelType}-cursor` }));
+    });
+    const client = new LiveWanGpClient("http://wan-gp.test/mcp");
+
+    const [first, second] = await Promise.all([client.listLoras("first-model"), client.listLoras("second-model")]);
+
+    expect(first.loras).toEqual(["first-model-one.safetensors", "first-model-two.safetensors"]);
+    expect(second.loras).toEqual(["second-model-one.safetensors", "second-model-two.safetensors"]);
+    expect(mcp.callTool.mock.calls.map(([call]) => [call.arguments.model_type, call.arguments.arguments.cursor]))
+      .toEqual([
+        ["first-model", undefined],
+        ["first-model", "first-model-cursor"],
+        ["second-model", undefined],
+        ["second-model", "second-model-cursor"],
+      ]);
+  });
 });

@@ -35,6 +35,7 @@ export class LiveWanGpClient implements WanGpClient {
   private checkpoints?: Promise<CheckpointIndex | undefined>;
   private asyncGeneration?: Promise<boolean>;
   private terminalJobs = new Map<string, WanGpJobSnapshot>();
+  private v2PaginationTail: Promise<void> = Promise.resolve();
   constructor(private readonly endpoint: string, private readonly loraRoot?: string) {}
 
   async ping() {
@@ -166,7 +167,13 @@ export class LiveWanGpClient implements WanGpClient {
   }
 
   /** v2 pages every collection with an opaque cursor and its own per-page size budget. */
-  private async v2Pages<T>(read: (cursor?: string) => Promise<Record<string, unknown>>, collect: (page: Record<string, unknown>) => T[]) {
+  private v2Pages<T>(read: (cursor?: string) => Promise<Record<string, unknown>>, collect: (page: Record<string, unknown>) => T[]) {
+    const operation = this.v2PaginationTail.then(() => this.readV2Pages(read, collect));
+    this.v2PaginationTail = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
+  private async readV2Pages<T>(read: (cursor?: string) => Promise<Record<string, unknown>>, collect: (page: Record<string, unknown>) => T[]) {
     const items: T[] = [];
     let cursor: string | undefined;
     for (let page = 0; page < V2_MAX_PAGES; page += 1) {

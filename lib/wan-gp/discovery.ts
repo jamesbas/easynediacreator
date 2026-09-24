@@ -7,6 +7,8 @@ import { classifyLoraCatalog } from "./lora-classifier/classify";
 import { discoveredReferenceImageLimit, REFERENCE_IMAGE_CAPABILITY } from "./reference-images";
 import { hasExplicitSetting } from "./settings-builder";
 
+const MODEL_DISCOVERY_CONCURRENCY = 4;
+
 export type LogicalRule = { key: string; displayName: string; workflowType: WorkflowType; family: string; output: "image" | "video"; requiresImage?: boolean; modelType?: string; namePattern?: RegExp; preferredPatterns?: RegExp[]; maxReferenceImages?: number; sourceUsesReferenceSlot?: boolean };
 
 const rules: LogicalRule[] = [
@@ -88,47 +90,76 @@ export async function discoverModels(client: WanGpClient, selections: Record<str
     output: "video",
     modelType: model.modelType,
   }));
-  const optionPromises: Array<Promise<ModelOption>> = [];
+  const optionTasks: Array<() => Promise<ModelOption>> = [];
   for (const rule of [...rules.filter(enabled), ...dynamicVideoRules]) {
     const matches = matchingModels(rule, models);
     const candidates = rule.workflowType === "video-create" ? [] : matches.map(({ modelType, name, availability }) => ({ modelType, name, availability }));
     const primary = matchModel(rule, models, selections[selectionKey(rule)]);
     if (!matches.length) {
-      optionPromises.push(Promise.resolve({ key: rule.key, logicalKey: rule.key, displayName: rule.displayName, workflowType: rule.workflowType, visible: false, availability: "missing", reason: "No matching installed WanGP model was found.", schema: {}, defaults: {}, capabilities: [], loraCatalog: { supported: false, loras: [], reason: "Model is not installed." }, candidates }));
+      optionTasks.push(async () => ({ key: rule.key, logicalKey: rule.key, displayName: rule.displayName, workflowType: rule.workflowType, visible: false, availability: "missing", reason: "No matching installed WanGP model was found.", schema: {}, defaults: {}, capabilities: [], loraCatalog: { supported: false, loras: [], reason: "Model is not installed." }, candidates }));
       continue;
     }
-    optionPromises.push(...matches.map(async (model): Promise<ModelOption> => {
-    const [availability, schema, defaults, metadata, loraCatalog] = await Promise.all([
-      client.getModelAvailability(model.modelType), client.getModelSchema(model.modelType).catch(() => ({})), client.getDefaultSettings(model.modelType), client.getModelMetadata(model.modelType), client.listLoras(model.modelType),
-    ]);
-    const effectiveSchema = Object.keys(schema).length ? schema : { metadata };
-    // Reference support is declared by the rule as well as discovered, because WanGP
-    // reports `media_inputs` inconsistently and a missed capability silently drops
-    // every reference the user attached. Video checkpoints have no rule of their own,
-    // so their limit comes from the published reference selector.
-    const maxReferenceImages = rule.maxReferenceImages ?? (rule.workflowType === "video-create" ? discoveredReferenceImageLimit(metadata) || undefined : undefined);
-    const capabilities = [...new Set([...getWanGpCapabilities(metadata), ...(maxReferenceImages ? [REFERENCE_IMAGE_CAPABILITY] : [])])];
-    const sourceUsesReferenceSlot = rule.sourceUsesReferenceSlot || (rule.key === "qwen-image-edit" && !hasExplicitSetting(effectiveSchema, defaults, ["image_guide"]));
-    const classifiedCatalog = await classifyLoraCatalog({ catalog: loraCatalog, schema: effectiveSchema, metadata, modelType: model.modelType, workflowType: rule.workflowType, profilesRoot: config.WANGP_PROFILES_ROOT, metadataRoot: config.WANGP_LORA_METADATA_ROOT, overridesPath: config.WANGP_LORA_CLASSIFIER_OVERRIDES });
-    const configuredVisibility = visibility[rule.workflowType];
-    return {
-      key: model.modelType === primary?.modelType ? rule.key : modelVariantKey(rule.key, model.modelType),
-      logicalKey: rule.key,
-      displayName: model.name || rule.displayName,
-      workflowType: rule.workflowType,
-      modelType: model.modelType,
-      visible: availability.status === "available" && (configuredVisibility === undefined || configuredVisibility.includes(model.modelType)),
-      availability: availability.status,
-      reason: availability.reason,
-      schema: effectiveSchema,
-      defaults,
-      capabilities,
-      maxReferenceImages,
-      sourceUsesReferenceSlot,
-      loraCatalog: classifiedCatalog,
-      candidates,
-    };
+    optionTasks.push(...matches.map((model) => async (): Promise<ModelOption> => {
+      const key = model.modelType === primary?.modelType ? rule.key : modelVariantKey(rule.key, model.modelType);
+      try {
+        const [availability, schema, defaults, metadata, loraCatalog] = await Promise.all([
+          client.getModelAvailability(model.modelType), client.getModelSchema(model.modelType).catch(() => ({})), client.getDefaultSettings(model.modelType), client.getModelMetadata(model.modelType), client.listLoras(model.modelType),
+        ]);
+        const effectiveSchema = Object.keys(schema).length ? schema : { metadata };
+        // Reference support is declared by the rule as well as discovered, because WanGP
+        // reports `media_inputs` inconsistently and a missed capability silently drops
+        // every reference the user attached. Video checkpoints have no rule of their own,
+        // so their limit comes from the published reference selector.
+        const maxReferenceImages = rule.maxReferenceImages ?? (rule.workflowType === "video-create" ? discoveredReferenceImageLimit(metadata) || undefined : undefined);
+        const capabilities = [...new Set([...getWanGpCapabilities(metadata), ...(maxReferenceImages ? [REFERENCE_IMAGE_CAPABILITY] : [])])];
+        const sourceUsesReferenceSlot = rule.sourceUsesReferenceSlot || (rule.key === "qwen-image-edit" && !hasExplicitSetting(effectiveSchema, defaults, ["image_guide"]));
+        const classifiedCatalog = await classifyLoraCatalog({ catalog: loraCatalog, schema: effectiveSchema, metadata, modelType: model.modelType, workflowType: rule.workflowType, profilesRoot: config.WANGP_PROFILES_ROOT, metadataRoot: config.WANGP_LORA_METADATA_ROOT, overridesPath: config.WANGP_LORA_CLASSIFIER_OVERRIDES });
+        const configuredVisibility = visibility[rule.workflowType];
+        return {
+          key,
+          logicalKey: rule.key,
+          displayName: model.name || rule.displayName,
+          workflowType: rule.workflowType,
+          modelType: model.modelType,
+          visible: availability.status === "available" && (configuredVisibility === undefined || configuredVisibility.includes(model.modelType)),
+          availability: availability.status,
+          reason: availability.reason,
+          schema: effectiveSchema,
+          defaults,
+          capabilities,
+          maxReferenceImages,
+          sourceUsesReferenceSlot,
+          loraCatalog: classifiedCatalog,
+          candidates,
+        };
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "WanGP could not load this model's details.";
+        return {
+          key,
+          logicalKey: rule.key,
+          displayName: model.name || rule.displayName,
+          workflowType: rule.workflowType,
+          modelType: model.modelType,
+          visible: false,
+          availability: "partial",
+          reason,
+          schema: {},
+          defaults: {},
+          capabilities: [],
+          loraCatalog: { supported: false, loras: [], reason },
+          candidates,
+        };
+      }
     }));
   }
-  return Promise.all(optionPromises);
+  const options = new Array<ModelOption>(optionTasks.length);
+  let taskIndex = 0;
+  const worker = async () => {
+    while (taskIndex < optionTasks.length) {
+      const currentIndex = taskIndex++;
+      options[currentIndex] = await optionTasks[currentIndex]();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(MODEL_DISCOVERY_CONCURRENCY, optionTasks.length) }, worker));
+  return options;
 }
