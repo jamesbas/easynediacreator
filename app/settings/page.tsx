@@ -40,7 +40,7 @@ export default async function SettingsPage() {
       <CollapsibleSection title="Characters" meta={`${preferences.characters.length} saved`} description="Save a prompt and reference photographs for each recurring character, then pull them into any generation by name.">
         <CharacterLibrary initialCharacters={characterSummaries(preferences.characters)} />
       </CollapsibleSection>
-      <CollapsibleSection title="Dropdown models" meta={`${models.filter((model) => model.visible).length} shown`} description="Select the exact WanGP checkpoints that appear in each creation tab. Newly discovered available checkpoints are shown by default.">
+      <CollapsibleSection title="Dropdown models" meta={`${models.length} discovered`} description="Select the exact WanGP checkpoints that appear in each creation tab. Newly discovered available checkpoints are shown by default.">
         <ModelVisibilityControl models={models} />
       </CollapsibleSection>
       <CollapsibleSection title="Approved models" meta={`${models.length} checkpoint mappings`} bodyClassName="divide-y divide-[var(--line)]">

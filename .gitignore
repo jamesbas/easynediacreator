@@ -43,6 +43,7 @@ yarn-error.log*
 /data/temp/*
 /data/character-references/*
 /data/model-selections.json
+/data/model-visibility.json
 /data/app-preferences.json
 /data/lora-classifier-overrides.json
 !/data/uploads/.gitkeep

@@ -33,16 +33,19 @@ export function ModelVisibilityControl({ models }: { models: VisibilityModel[] }
     const visibleModelTypes = models
       .filter((model) => model.workflowType === workflowType && model.modelType && next.has(`${workflowType}:${model.modelType}`))
       .map((model) => model.modelType as string);
-    const response = await fetch("/api/settings/model-visibility", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ workflowType, visibleModelTypes }),
-    });
-    const result = await response.json();
-    setSaving(undefined);
-    if (!response.ok) {
+    try {
+      const response = await fetch("/api/settings/model-visibility", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workflowType, visibleModelTypes }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Dropdown model visibility could not be saved.");
+    } catch (saveError) {
       setVisible(previous);
-      setError(result.error ?? "Dropdown model visibility could not be saved.");
+      setError(saveError instanceof Error ? saveError.message : "Dropdown model visibility could not be saved.");
+    } finally {
+      setSaving(undefined);
     }
   }
 

@@ -17,9 +17,9 @@ export async function PUT(request: Request) {
     if (input.visibleModelTypes.some((modelType) => !availableModelTypes.has(modelType))) {
       return NextResponse.json({ error: "Select only available models compatible with this workflow." }, { status: 400 });
     }
-    await setModelVisibility(input.workflowType, input.visibleModelTypes);
+    const visibility = await setModelVisibility(input.workflowType, input.visibleModelTypes);
     clearModelCache();
-    return NextResponse.json({ models: await getModels(true) });
+    return NextResponse.json({ visibility });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Dropdown model visibility could not be saved." }, { status: 400 });
   }
