@@ -283,6 +283,25 @@ test("selects which exact WanGP checkpoints appear in each workflow", async ({ p
   await page.getByLabel(/Krea 2 RAW.*krea2_raw_fixture/).check();
   expect((await showResponse).ok()).toBe(true);
 
+  const minimaxModel = page.getByLabel(/MiniMax Video.*minimax_video_fixture/);
+  if (!await minimaxModel.isChecked()) {
+    const resetVideoResponse = page.waitForResponse((response) => response.url().endsWith("/api/settings/model-visibility") && response.request().method() === "PUT");
+    await minimaxModel.check();
+    expect((await resetVideoResponse).ok()).toBe(true);
+  }
+  const hideVideoResponse = page.waitForResponse((response) => response.url().endsWith("/api/settings/model-visibility") && response.request().method() === "PUT");
+  await minimaxModel.uncheck();
+  expect((await hideVideoResponse).ok()).toBe(true);
+  await page.goto("/create-video");
+  await expect(page.getByRole("option", { name: "MiniMax Video", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("option", { name: "LTX-2 Distilled", exact: true })).toHaveCount(1);
+
+  await page.goto("/settings");
+  await page.getByRole("heading", { name: "Dropdown models", exact: true }).click();
+  const restoreVideoResponse = page.waitForResponse((response) => response.url().endsWith("/api/settings/model-visibility") && response.request().method() === "PUT");
+  await page.getByLabel(/MiniMax Video.*minimax_video_fixture/).check();
+  expect((await restoreVideoResponse).ok()).toBe(true);
+
   await expect(page.getByRole("heading", { name: "Approved models", exact: true })).toBeVisible();
   await page.getByRole("heading", { name: "Approved models", exact: true }).click();
   await expect(page.getByText("qwen_image_edit_fixture", { exact: true }).last()).toBeVisible();
