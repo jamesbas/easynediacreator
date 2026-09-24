@@ -13,7 +13,7 @@ import { InsertCharacterButton } from "./insert-character-button";
 import { LoraSelector, readLoraSelections } from "./lora-selector";
 import { countReferenceSelection, emptyReferenceSelection, ReferenceImagePicker, selectedCharacterReferenceIds, uploadReferenceImage, type ReferenceAssetOption, type ReferenceSelectionState } from "./reference-image-picker";
 
-type FormModel = { key: string; displayName: string; availability: string; reason?: string; controls: GenerationControls; lockedGuidance?: number; maxReferenceImages?: number; loraCatalog: LoraCatalog; defaultLoras: { name: string; strength: number }[] };
+type FormModel = { key: string; logicalKey: string; displayName: string; availability: string; reason?: string; controls: GenerationControls; lockedGuidance?: number; maxReferenceImages?: number; loraCatalog: LoraCatalog; defaultLoras: { name: string; strength: number }[] };
 
 export function ImageCreateForm({ models, assets, characters, defaultModel, promptEnhancerEnabled, initialRequest }: { models: FormModel[]; assets: ReferenceAssetOption[]; characters: CharacterSummary[]; defaultModel: string; promptEnhancerEnabled: boolean; initialRequest?: ImageCreateRequest }) {
   const router = useRouter();
@@ -33,7 +33,7 @@ export function ImageCreateForm({ models, assets, characters, defaultModel, prom
   const [references, setReferences] = useState<ReferenceSelectionState>(emptyReferenceSelection);
   const uploadedReferences = useRef(new Map<string, string>());
   const referenceCount = countReferenceSelection(references, characters);
-  const lockedGuidance = preset?.settings.guidanceScale ?? selected?.lockedGuidance ?? (modelKey === "qwen-image" && hasGuidanceOneMarker(selectedLoraNames) ? 1 : undefined);
+  const lockedGuidance = preset?.settings.guidanceScale ?? selected?.lockedGuidance ?? (selected?.logicalKey === "qwen-image" && hasGuidanceOneMarker(selectedLoraNames) ? 1 : undefined);
   const guidanceLocked = lockedGuidance !== undefined;
   const effectiveGuidance = lockedGuidance ?? guidanceScale;
   const effectiveSolver = preset?.settings.sampleSolver ?? sampleSolver;

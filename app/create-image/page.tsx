@@ -15,20 +15,21 @@ export default async function CreateImagePage({ searchParams }: { searchParams: 
   const preferences = await getAppPreferences();
   let discovered: Awaited<ReturnType<typeof getModels>> = [];
   try { discovered = await getModels(); } catch {}
-  const models = discovered.filter((model) => model.workflowType === "image-create").map((model) => {
-    const fluxPreset = model.key === "flux-klein-9b" ? FLUX_KLEIN_IMAGE_PRESET : undefined;
+  const models = discovered.filter((model) => model.workflowType === "image-create" && model.visible).map((model) => {
+    const fluxPreset = model.logicalKey === "flux-klein-9b" ? FLUX_KLEIN_IMAGE_PRESET : undefined;
     const controlDefaults = fluxPreset ? { ...model.defaults, resolution: fluxPreset.defaultResolution, num_inference_steps: fluxPreset.defaultSteps } : model.defaults;
     const controls = getGenerationControls(model.schema, controlDefaults, { workflow: "image", fallbackResolutions: getImageFallbackResolutions(model.key), fallbackResolution: fluxPreset?.defaultResolution ?? (typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1024x1024") });
     return {
       key: model.key,
+      logicalKey: model.logicalKey,
       displayName: model.displayName,
       availability: model.availability,
       reason: model.reason,
       controls,
-      lockedGuidance: lockedGuidanceScale(model.key, model.modelType, model.displayName, model.defaults.type, model.defaults.sample_solver, model.defaults.activated_loras),
+      lockedGuidance: lockedGuidanceScale(model.logicalKey, model.modelType, model.displayName, model.defaults.type, model.defaults.sample_solver, model.defaults.activated_loras),
       maxReferenceImages: model.maxReferenceImages,
       loraCatalog: model.loraCatalog,
-      defaultLoras: preferences.defaultLoras[`image-create:${model.key}`] ?? [],
+      defaultLoras: preferences.defaultLoras[`image-create:${model.key}`] ?? preferences.defaultLoras[`image-create:${model.logicalKey}`] ?? [],
     };
   });
   const assets = listOutputs().filter((asset) => asset.type === "image").map(publicAsset).map(({ id, filename, contentUrl }) => ({ id, filename, contentUrl }));

@@ -20,7 +20,7 @@ export default async function CreateVideoPage({ searchParams }: { searchParams: 
   const legacyLtxModelType = selections["video-create:ltx-2"];
   let discovered: Awaited<ReturnType<typeof getModels>> = [];
   try { discovered = await getModels(); } catch {}
-  const models = discovered.filter((model) => model.workflowType === "video-create").map((model) => {
+  const models = discovered.filter((model) => model.workflowType === "video-create" && model.visible).map((model) => {
     const defaultResolution = typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1280x720";
     const sourceStrength = model.defaults.input_video_strength ?? model.defaults.source_strength ?? model.defaults.denoising_strength;
     return { key: model.key, displayName: model.displayName, availability: model.availability, controls: getGenerationControls(model.schema, model.defaults, { workflow: "video", fallbackResolutions: getVideoFallbackResolutions(model.modelType ?? model.key, defaultResolution), fallbackResolution: defaultResolution }), defaultSourceStrength: typeof sourceStrength === "number" ? sourceStrength : 0.85, supportsSourceStrength: typeof sourceStrength === "number", supportsNegativePrompt: Object.hasOwn(model.defaults, "negative_prompt"), supportsStartFrame: model.capabilities.includes("start-frame"), requiresStartFrame: !model.capabilities.includes("text-to-video"), supportsEndFrame: model.capabilities.includes("end-frame"), maxReferenceImages: model.maxReferenceImages ?? 0, loraCatalog: model.loraCatalog, defaultLoras: preferences.defaultLoras[`video-create:${model.key}`] ?? (model.modelType && model.modelType === legacyLtxModelType ? preferences.defaultLoras["video-create:ltx-2"] ?? [] : []) };

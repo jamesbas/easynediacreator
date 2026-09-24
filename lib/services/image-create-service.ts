@@ -18,14 +18,14 @@ export async function createImage(request: ImageCreateRequest) {
   const references = await resolveReferenceImagePaths(request);
   assertReferenceImagesAllowed(model, references.length);
   const normalizedRequest = { ...request, loras: validateModelLoras(request.loras, model.loraCatalog) };
-  const fluxPreset = model.key === "flux-klein-9b" ? FLUX_KLEIN_IMAGE_PRESET : undefined;
+  const fluxPreset = model.logicalKey === "flux-klein-9b" ? FLUX_KLEIN_IMAGE_PRESET : undefined;
   const controlDefaults = fluxPreset ? { ...model.defaults, resolution: fluxPreset.defaultResolution, num_inference_steps: fluxPreset.defaultSteps } : model.defaults;
-  const controls = getGenerationControls(model.schema, controlDefaults, { workflow: "image", fallbackResolutions: getImageFallbackResolutions(model.key), fallbackResolution: fluxPreset?.defaultResolution ?? (typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1024x1024") });
+  const controls = getGenerationControls(model.schema, controlDefaults, { workflow: "image", fallbackResolutions: getImageFallbackResolutions(model.logicalKey), fallbackResolution: fluxPreset?.defaultResolution ?? (typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1024x1024") });
   validateGenerationControls(normalizedRequest, controls);
   const preset = resolveLoraPreset(request.loraPresetId, normalizedRequest.loras, model.loraCatalog, model.modelType, "image-create");
-  const settings = request.modelKey === "qwen-image"
+  const settings = model.logicalKey === "qwen-image"
     ? buildQwenImageSettings(normalizedRequest, model.defaults, model.schema, model.modelType, references)
-    : request.modelKey === "krea-2"
+    : model.logicalKey === "krea-2"
       ? buildKrea2ImageSettings(normalizedRequest, model.defaults, model.schema, model.modelType)
       : buildFluxKleinImageSettings(normalizedRequest, model.defaults, model.schema, model.modelType, references);
   applyLoraAccelerationPreset(settings, preset, normalizedRequest.loras);

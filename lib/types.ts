@@ -48,9 +48,12 @@ export type LoraCatalog = { supported: boolean; loras: string[]; items?: Classif
 export type ModelCandidate = { modelType: string; name: string; availability?: ModelAvailability };
 export type ModelOption = {
   key: string;
+  /** Stable workflow-family key used to select adapters and preserve legacy defaults. */
+  logicalKey: string;
   displayName: string;
   workflowType: WorkflowType;
   modelType?: string;
+  visible: boolean;
   availability: ModelAvailability;
   reason?: string;
   schema: Record<string, unknown>;

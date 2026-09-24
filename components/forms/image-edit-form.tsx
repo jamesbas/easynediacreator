@@ -16,7 +16,7 @@ import { InsertCharacterButton } from "./insert-character-button";
 import { LoraSelector, readLoraSelections } from "./lora-selector";
 
 /** `maxReferenceImages` is the total `image_refs` budget; on Krea 2 the edited frame takes one of those slots. */
-type FormModel = { key: string; displayName: string; availability: string; capabilities: string[]; maxReferenceImages?: number; maxReferenceImagesWithSource?: number; controls: GenerationControls; loraCatalog: LoraCatalog; defaultLoras: { name: string; strength: number }[] };
+type FormModel = { key: string; logicalKey: string; displayName: string; availability: string; capabilities: string[]; maxReferenceImages?: number; maxReferenceImagesWithSource?: number; controls: GenerationControls; loraCatalog: LoraCatalog; defaultLoras: { name: string; strength: number }[] };
 type AssetOption = { id: string; filename: string; contentUrl: string };
 type ReferenceFile = { id: string; file: File; preview: string };
 const MAX_BATCH_SOURCES = 10;

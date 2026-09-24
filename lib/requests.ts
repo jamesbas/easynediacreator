@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CHARACTER_GENDERS } from "@/lib/character-prompt";
+import { logicalModelKey } from "@/lib/model-keys";
 import { normalizeWanGpPrompt } from "@/lib/wan-gp/prompt";
 import { isSafeRelativeLoraIdentifier } from "@/lib/wan-gp/schemas";
 
@@ -74,10 +75,10 @@ export const imageEditRequestSchema = baseGenerationSchema.extend({
   if (!hasSource && value.sharpenUnblur) context.addIssue({ code: "custom", path: ["sharpenUnblur"], message: "Sharpen and Unblur requires a source image." });
   const referenceCount = countReferences(value);
   if (referenceCount > 8) context.addIssue({ code: "custom", path: ["referenceUploadIds"], message: "Choose no more than 8 reference images." });
-  if (value.faceSwap && value.modelKey !== "qwen-image-edit") context.addIssue({ code: "custom", path: ["modelKey"], message: "Face swap requires Qwen Image Edit." });
+  if (value.faceSwap && logicalModelKey(value.modelKey) !== "qwen-image-edit") context.addIssue({ code: "custom", path: ["modelKey"], message: "Face swap requires Qwen Image Edit." });
   if (value.faceSwap && referenceCount !== 1) context.addIssue({ code: "custom", path: ["referenceUploadIds"], message: "Face swap requires exactly one reference image." });
   if (value.faceSwap && value.loras.length) context.addIssue({ code: "custom", path: ["loras"], message: "Face swap manages its required LoRAs automatically." });
-  if (value.sharpenUnblur && value.modelKey !== "qwen-image-edit") context.addIssue({ code: "custom", path: ["modelKey"], message: "Sharpen and Unblur requires Qwen Image Edit." });
+  if (value.sharpenUnblur && logicalModelKey(value.modelKey) !== "qwen-image-edit") context.addIssue({ code: "custom", path: ["modelKey"], message: "Sharpen and Unblur requires Qwen Image Edit." });
   if (value.sharpenUnblur && value.faceSwap) context.addIssue({ code: "custom", path: ["sharpenUnblur"], message: "Choose either Face Swap or Sharpen and Unblur, not both." });
   if (value.sharpenUnblur && value.loras.length) context.addIssue({ code: "custom", path: ["loras"], message: "Sharpen and Unblur cannot be combined with other LoRAs." });
   if (value.sharpenUnblur && value.loraPresetId) context.addIssue({ code: "custom", path: ["loraPresetId"], message: "Sharpen and Unblur cannot be combined with an acceleration preset." });

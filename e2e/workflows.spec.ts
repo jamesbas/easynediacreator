@@ -257,19 +257,40 @@ test("does not accept arbitrary filesystem paths as asset handles", async ({ req
   expect(response.status()).toBe(404);
 });
 
-test("shows exact WanGP model selections in Settings", async ({ page }) => {
+test("selects which exact WanGP checkpoints appear in each workflow", async ({ page }) => {
   await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Dropdown models", exact: true })).toBeVisible();
+  await page.getByRole("heading", { name: "Dropdown models", exact: true }).click();
+  const rawModel = page.getByLabel(/Krea 2 RAW.*krea2_raw_fixture/);
+  if (!await rawModel.isChecked()) {
+    const resetResponse = page.waitForResponse((response) => response.url().endsWith("/api/settings/model-visibility") && response.request().method() === "PUT");
+    await rawModel.check();
+    expect((await resetResponse).ok()).toBe(true);
+  }
+  await expect(rawModel).toBeChecked();
+  await expect(page.getByLabel(/Krea 2 Turbo.*krea2_turbo_fixture/)).toBeChecked();
+  const hideResponse = page.waitForResponse((response) => response.url().endsWith("/api/settings/model-visibility") && response.request().method() === "PUT");
+  await rawModel.uncheck();
+  await expect(rawModel).not.toBeChecked();
+  expect((await hideResponse).ok()).toBe(true);
+  await page.goto("/create-image");
+  await expect(page.getByRole("option", { name: "Krea 2 RAW", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("option", { name: "Krea 2 Turbo", exact: true })).toHaveCount(1);
+
+  await page.goto("/settings");
+  await page.getByRole("heading", { name: "Dropdown models", exact: true }).click();
+  const showResponse = page.waitForResponse((response) => response.url().endsWith("/api/settings/model-visibility") && response.request().method() === "PUT");
+  await page.getByLabel(/Krea 2 RAW.*krea2_raw_fixture/).check();
+  expect((await showResponse).ok()).toBe(true);
+
   await expect(page.getByRole("heading", { name: "Approved models", exact: true })).toBeVisible();
   await page.getByRole("heading", { name: "Approved models", exact: true }).click();
-  const selectors = page.getByLabel("WanGP model");
-  await expect(selectors).toHaveCount(6);
-  await expect(page.getByText(/qwen_image_edit_fixture/)).toBeVisible();
-  await expect(page.getByText(/ltx2_fixture/)).toBeVisible();
-  await expect(page.getByText(/minimax_video_fixture/)).toBeVisible();
-  // Krea 2 ships RAW and Turbo per workflow; Turbo is preferred, and both stay
-  // pinnable here.
-  await expect(page.getByText(/krea2_turbo_fixture/)).toBeVisible();
-  await expect(page.getByText(/krea2_turbo_edit_fixture/)).toBeVisible();
+  await expect(page.getByText("qwen_image_edit_fixture", { exact: true }).last()).toBeVisible();
+  await expect(page.getByText("ltx2_fixture", { exact: true }).last()).toBeVisible();
+  await expect(page.getByText("minimax_video_fixture", { exact: true }).last()).toBeVisible();
+  await expect(page.getByText("krea2_raw_fixture", { exact: true }).last()).toBeVisible();
+  await expect(page.getByText("krea2_turbo_fixture", { exact: true }).last()).toBeVisible();
+  await expect(page.getByText("krea2_turbo_edit_fixture", { exact: true }).last()).toBeVisible();
 });
 
 test("inserts the default character into an existing image prompt", async ({ page }) => {

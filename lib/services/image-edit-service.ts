@@ -34,16 +34,16 @@ export async function editImage(request: ImageEditRequest) {
   if (request.sharpenUnblur) {
     const requiredLora = SHARPEN_UNBLUR_LORA.name.toLocaleLowerCase();
     if (request.faceSwap || request.loras.length || request.loraPresetId) throw new Error("Sharpen and Unblur cannot be combined with Face Swap, acceleration presets, or other LoRAs.");
-    if (request.modelKey !== "qwen-image-edit") throw new Error("Sharpen and Unblur requires Qwen Image Edit.");
+    if (model.logicalKey !== "qwen-image-edit") throw new Error("Sharpen and Unblur requires Qwen Image Edit.");
     if (!model.loraCatalog.supported || !model.loraCatalog.loras.some((name) => name.toLocaleLowerCase() === requiredLora)) throw new Error(`Sharpen and Unblur requires '${SHARPEN_UNBLUR_LORA.name}' in the Qwen LoRA catalog.`);
   }
   const normalizedRequest = { ...request, prompt: request.faceSwap ? faceSwapPrompt(request.faceSwapGender) : request.prompt, loras: validateModelLoras(request.loras, model.loraCatalog) };
-  const controls = getGenerationControls(model.schema, model.defaults, { workflow: "image", fallbackResolutions: getImageFallbackResolutions(model.key), fallbackResolution: typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1024x1024" });
+  const controls = getGenerationControls(model.schema, model.defaults, { workflow: "image", fallbackResolutions: getImageFallbackResolutions(model.logicalKey), fallbackResolution: typeof model.defaults.resolution === "string" ? model.defaults.resolution : "1024x1024" });
   validateGenerationControls(normalizedRequest, controls);
   const preset = resolveLoraPreset(request.loraPresetId, normalizedRequest.loras, model.loraCatalog, model.modelType, "image-edit");
-  const settings = request.modelKey === "qwen-image-edit"
+  const settings = model.logicalKey === "qwen-image-edit"
     ? buildQwenImageEditSettings(normalizedRequest, model.defaults, model.schema, model.modelType, source, referencePaths)
-    : request.modelKey === "krea-2-edit"
+    : model.logicalKey === "krea-2-edit"
       ? buildKrea2ImageEditSettings(normalizedRequest, model.defaults, model.schema, model.modelType, source, referencePaths)
       : buildFluxKleinEditSettings(normalizedRequest, model.defaults, model.schema, model.modelType, source);
   applyLoraAccelerationPreset(settings, preset, normalizedRequest.loras);

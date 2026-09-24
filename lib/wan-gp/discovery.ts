@@ -1,4 +1,6 @@
 import { config } from "@/lib/config";
+import { modelVariantKey } from "@/lib/model-keys";
+import type { ModelVisibility } from "@/lib/runtime/model-preferences";
 import type { ModelOption, WorkflowType } from "@/lib/types";
 import type { WanGpClient, WanGpModelSummary } from "./client";
 import { classifyLoraCatalog } from "./lora-classifier/classify";
@@ -73,7 +75,7 @@ export function matchModel(rule: LogicalRule, models: WanGpModelSummary[], prefe
   return undefined;
 }
 
-export async function discoverModels(client: WanGpClient, selections: Record<string, string> = {}): Promise<ModelOption[]> {
+export async function discoverModels(client: WanGpClient, selections: Record<string, string> = {}, visibility: ModelVisibility = {}): Promise<ModelOption[]> {
   const models = [...await client.listModels("image"), ...await client.listModels("video")];
   const videoModels = models.filter((model) => model.output === "video");
   const preferredVideoModel = selections[`video-create:${config.DEFAULT_VIDEO_MODEL}`] ?? config.DEFAULT_VIDEO_MODEL;
@@ -86,11 +88,16 @@ export async function discoverModels(client: WanGpClient, selections: Record<str
     output: "video",
     modelType: model.modelType,
   }));
-  return Promise.all([...rules.filter(enabled), ...dynamicVideoRules].map(async (rule) => {
+  const optionPromises: Array<Promise<ModelOption>> = [];
+  for (const rule of [...rules.filter(enabled), ...dynamicVideoRules]) {
     const matches = matchingModels(rule, models);
     const candidates = rule.workflowType === "video-create" ? [] : matches.map(({ modelType, name, availability }) => ({ modelType, name, availability }));
-    const model = matchModel(rule, models, selections[selectionKey(rule)]);
-    if (!model) return { key: rule.key, displayName: rule.displayName, workflowType: rule.workflowType, availability: "missing" as const, reason: "No matching installed WanGP model was found.", schema: {}, defaults: {}, capabilities: [], loraCatalog: { supported: false, loras: [], reason: "Model is not installed." }, candidates };
+    const primary = matchModel(rule, models, selections[selectionKey(rule)]);
+    if (!matches.length) {
+      optionPromises.push(Promise.resolve({ key: rule.key, logicalKey: rule.key, displayName: rule.displayName, workflowType: rule.workflowType, visible: false, availability: "missing", reason: "No matching installed WanGP model was found.", schema: {}, defaults: {}, capabilities: [], loraCatalog: { supported: false, loras: [], reason: "Model is not installed." }, candidates }));
+      continue;
+    }
+    optionPromises.push(...matches.map(async (model): Promise<ModelOption> => {
     const [availability, schema, defaults, metadata, loraCatalog] = await Promise.all([
       client.getModelAvailability(model.modelType), client.getModelSchema(model.modelType).catch(() => ({})), client.getDefaultSettings(model.modelType), client.getModelMetadata(model.modelType), client.listLoras(model.modelType),
     ]);
@@ -103,6 +110,25 @@ export async function discoverModels(client: WanGpClient, selections: Record<str
     const capabilities = [...new Set([...getWanGpCapabilities(metadata), ...(maxReferenceImages ? [REFERENCE_IMAGE_CAPABILITY] : [])])];
     const sourceUsesReferenceSlot = rule.sourceUsesReferenceSlot || (rule.key === "qwen-image-edit" && !hasExplicitSetting(effectiveSchema, defaults, ["image_guide"]));
     const classifiedCatalog = await classifyLoraCatalog({ catalog: loraCatalog, schema: effectiveSchema, metadata, modelType: model.modelType, workflowType: rule.workflowType, profilesRoot: config.WANGP_PROFILES_ROOT, metadataRoot: config.WANGP_LORA_METADATA_ROOT, overridesPath: config.WANGP_LORA_CLASSIFIER_OVERRIDES });
-    return { key: rule.key, displayName: model.name || rule.displayName, workflowType: rule.workflowType, modelType: model.modelType, availability: availability.status, reason: availability.reason, schema: effectiveSchema, defaults, capabilities, maxReferenceImages, sourceUsesReferenceSlot, loraCatalog: classifiedCatalog, candidates };
-  }));
+    const configuredVisibility = visibility[rule.workflowType];
+    return {
+      key: model.modelType === primary?.modelType ? rule.key : modelVariantKey(rule.key, model.modelType),
+      logicalKey: rule.key,
+      displayName: model.name || rule.displayName,
+      workflowType: rule.workflowType,
+      modelType: model.modelType,
+      visible: availability.status === "available" && (configuredVisibility === undefined || configuredVisibility.includes(model.modelType)),
+      availability: availability.status,
+      reason: availability.reason,
+      schema: effectiveSchema,
+      defaults,
+      capabilities,
+      maxReferenceImages,
+      sourceUsesReferenceSlot,
+      loraCatalog: classifiedCatalog,
+      candidates,
+    };
+    }));
+  }
+  return Promise.all(optionPromises);
 }

@@ -4,7 +4,7 @@ import { getWanGpClient } from "@/lib/wan-gp";
 import { discoverModels } from "@/lib/wan-gp/discovery";
 import { getLocalLoraFingerprint } from "@/lib/wan-gp/local-lora-catalog";
 import { getClassifierFingerprint } from "@/lib/wan-gp/lora-classifier/classify";
-import { getModelSelections } from "@/lib/runtime/model-preferences";
+import { getModelSelections, getModelVisibility } from "@/lib/runtime/model-preferences";
 
 type Cache = { models: ModelOption[]; refreshedAt: number; loraFingerprint?: string; classifierFingerprint?: string };
 const globalCache = globalThis as unknown as { easyMediaModelCache?: Cache };
@@ -14,7 +14,8 @@ export async function getModels(force = false) {
   const loraFingerprint = await getLocalLoraFingerprint(config.WANGP_LORA_ROOT);
   const classifierFingerprint = await getClassifierFingerprint(config.WANGP_PROFILES_ROOT, config.WANGP_LORA_METADATA_ROOT, config.WANGP_LORA_CLASSIFIER_OVERRIDES);
   if (!force && globalCache.easyMediaModelCache && globalCache.easyMediaModelCache.loraFingerprint === loraFingerprint && globalCache.easyMediaModelCache.classifierFingerprint === classifierFingerprint && Date.now() - globalCache.easyMediaModelCache.refreshedAt < maxAge) return globalCache.easyMediaModelCache.models;
-  const models = await discoverModels(getWanGpClient(), await getModelSelections());
+  const [selections, visibility] = await Promise.all([getModelSelections(), getModelVisibility()]);
+  const models = await discoverModels(getWanGpClient(), selections, visibility);
   globalCache.easyMediaModelCache = { models, refreshedAt: Date.now(), loraFingerprint, classifierFingerprint };
   return models;
 }

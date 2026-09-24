@@ -16,6 +16,28 @@ describe("model discovery", () => {
     expect(videoModels.map((model) => model.key)).toEqual(["ltx2_fixture", "minimax_video_fixture"]);
   });
 
+  it("exposes every compatible image checkpoint instead of collapsing variants", async () => {
+    const models = await discoverModels(new FakeWanGpClient());
+    const createModels = models.filter((model) => model.workflowType === "image-create" && model.logicalKey === "krea-2");
+    const editModels = models.filter((model) => model.workflowType === "image-edit" && model.logicalKey === "krea-2-edit");
+
+    expect(createModels.map((model) => model.modelType)).toEqual(["krea2_raw_fixture", "krea2_turbo_fixture"]);
+    expect(editModels.map((model) => model.modelType)).toEqual(["krea2_raw_edit_fixture", "krea2_turbo_edit_fixture"]);
+    expect(createModels.every((model) => model.visible)).toBe(true);
+  });
+
+  it("applies model visibility independently to each workflow", async () => {
+    const models = await discoverModels(new FakeWanGpClient(), {}, {
+      "image-create": ["krea2_raw_fixture"],
+      "image-edit": ["qwen_image_edit_fixture"],
+      "video-create": ["ltx2_fixture"],
+    });
+
+    expect(models.filter((model) => model.workflowType === "image-create" && model.visible).map((model) => model.modelType)).toEqual(["krea2_raw_fixture"]);
+    expect(models.filter((model) => model.workflowType === "image-edit" && model.visible).map((model) => model.modelType)).toEqual(["qwen_image_edit_fixture"]);
+    expect(models.filter((model) => model.workflowType === "video-create" && model.visible).map((model) => model.modelType)).toEqual(["ltx2_fixture"]);
+  });
+
   it("normalizes current capability and media-input metadata", () => {
     expect(getWanGpCapabilities({
       capabilities: { text_to_video: true, image_to_video: true, audio_output: false },

@@ -6,10 +6,10 @@ Powered by WanGP by DeepBeepMeep.
 
 ## Features
 
-- Create images with Qwen Image or Flux.2 Klein 9B.
+- Create images with every compatible locally available Qwen Image, Flux.2 Klein, or Krea 2 checkpoint discovered from WanGP.
 - Use model-discovered resolutions, step and guidance ranges, solvers, schedulers, FPS, and duration constraints across generation workflows.
 - Control image-generation Guidance (CFG); Qwen Lightning/distilled recipes enforce CFG 1.
-- Edit a source image with Qwen Image Edit or Flux.2 Klein.
+- Edit a source image with compatible Qwen Image Edit, Flux.2 Klein, or Krea 2 Identity Edit checkpoints.
 - Add separate reference images to Qwen edits.
 - Apply the Qwen face-swap preset with its prompt, Lightning accelerator, face LoRA, strengths, and inference settings configured automatically.
 - Apply the exclusive Qwen Sharpen and Unblur preset using `Qwen-Image-Edit-Unblur-Upscale_20.safetensors` at strength 1.
@@ -78,6 +78,8 @@ WANGP_LORA_CLASSIFIER_OVERRIDES=C:\path\to\EasyMediaGen\data\lora-classifier-ove
 When `WANGP_PROFILES_ROOT` and `WANGP_LORA_METADATA_ROOT` are omitted, the app derives them as siblings of `WANGP_LORA_ROOT`. The private classifier override path defaults to `data/lora-classifier-overrides.json` in this project.
 
 Restart the app, open Settings, and select **Refresh models**. Unmatched or unavailable allow-listed image models remain disabled. Every video model that WanGP reports as locally available is exposed as a separate Create Video option. WanGP field names are isolated under `lib/wan-gp/adapters`; verify those mappings against the installed WanGP schema.
+
+Each compatible WanGP checkpoint is exposed independently, so versions such as Qwen Image 2.1 and Qwen Image 2511 Edit can remain available at the same time. In **Settings > Dropdown models**, select exactly which checkpoints appear in **Create Image**, **Edit Image**, and **Create Video**. All newly discovered available checkpoints are shown by default until a workflow-specific selection is saved.
 
 ### Schema-driven generation controls
 
